@@ -1,1 +1,11 @@
-sim86
+.gdb_history
+
+# binaries
+sim86*
+
+listing_0037_single_register_mov
+listing_0038_many_register_mov
+
+# generated
+listing_0037_decoded*
+listing_0038_decoded*
