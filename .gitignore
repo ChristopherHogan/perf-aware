@@ -1,7 +1,12 @@
 .gdb_history
 
+GPATH
+GRTAGS
+GTAGS
+
 # binaries
-sim86*
+sim86
+sim86db
 
 listing_0037_single_register_mov
 listing_0038_many_register_mov

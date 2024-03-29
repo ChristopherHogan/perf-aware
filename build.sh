@@ -1,9 +1,12 @@
 #!/bin/bash
 
-g++ -O3 -g -Wall -Wextra --std=c++20 -o sim86 sim86.cpp
-g++ -ggdb3 -O0 -Wall -Wextra --std=c++20 -o sim86db sim86.cpp
+time g++ -O3 -g -Wall -Wextra --std=c++20 -o sim86 sim86.cpp
+time g++ -ggdb3 -O0 -Wall -Wextra --std=c++20 -o sim86db sim86.cpp
 
-files=("listing_0037_single_register_mov" "listing_0038_many_register_mov")
+files=(
+    "listing_0037_single_register_mov"
+    "listing_0038_many_register_mov"
+)
 
 if [[ ! -z "${TEST}" ]]; then
     for f in "${files[@]}"; do
