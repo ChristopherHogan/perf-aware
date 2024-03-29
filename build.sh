@@ -6,6 +6,8 @@ time g++ -ggdb3 -O0 -Wall -Wextra --std=c++20 -o sim86db sim86.cpp
 files=(
     "listing_0037_single_register_mov"
     "listing_0038_many_register_mov"
+    "listing_0039_more_movs"
+    "listing_0040_challenge_movs"
 )
 
 if [[ ! -z "${TEST}" ]]; then

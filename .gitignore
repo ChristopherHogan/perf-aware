@@ -10,7 +10,8 @@ sim86db
 
 listing_0037_single_register_mov
 listing_0038_many_register_mov
+listing_0039_more_movs
+listing_0040_challenge_movs
 
 # generated
-listing_0037_decoded*
-listing_0038_decoded*
+listing_[0-9]*_decoded*
