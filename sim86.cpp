@@ -6,7 +6,6 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -17,7 +16,6 @@ using std::ofstream;
 using std::string;
 using std::to_string;
 using std::unordered_map;
-using std::vector;
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -25,6 +23,16 @@ typedef uint32_t u32;
 
 typedef int8_t i8;
 typedef int16_t i16;
+
+const int kRegisterSize = 16;
+
+#define KILOBYTES(n) (n * 1024)
+#define MEGABYTES(n) (n * KILOBYTES(1) * KILOBYTES(1))
+
+struct Memory {
+  u32 used;
+  u8 bytes[MEGABYTES(1)];
+};
 
 // NOTE(chogan): 3 bits for register, 1 bit for w (8 or 16 bit)
 unordered_map<u8, string> registers = {
@@ -131,14 +139,14 @@ unordered_map<u8, MovVariants> mov_variants = {
   {0b10100011, MovVariants_AccumulatorToMem}
 };
 
-void readEntireFile(vector<u8> &data, const char *fname) {
+void readEntireFile(Memory *memory, const char *fname) {
   fs::path p(fname);
   auto sz = fs::file_size(p);
-  data.resize(sz);
 
   ifstream is(fname, std::ios::binary);
   if (is.is_open()) {
-    is.read(reinterpret_cast<char*>(data.data()), sz);
+    is.read(reinterpret_cast<char*>(memory->bytes), sz);
+    memory->used = sz;
   } else {
     // TODO(chogan): error handling
   }
@@ -162,7 +170,7 @@ struct DecodedInstruction {
   u8 disp_lo;
   u8 disp_hi;
 
-  int decodeMov(const vector<u8> &data, size_t offset) {
+  int decodeMov(const u8 *data, size_t offset) {
     int num_bytes = 2;
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
@@ -361,23 +369,22 @@ int main(int argc, char **argv) {
     // TODO(chogan): error handling
   }
 
-  vector<u8> file_data;
-  readEntireFile(file_data, fname);
+  Memory memory = {};
+  readEntireFile(&memory, fname);
 
   string output_fname = getOutputFilename(fname);
   ofstream output_file(output_fname);
-  int register_size = 16;
-  output_file << "bits " << to_string(register_size) << endl;
+  output_file << "bits " << to_string(kRegisterSize) << endl;
 
   size_t i = 0;
-  size_t sz = file_data.size();
+  size_t sz = memory.used;
   while (i < sz) {
     int instruction_size = 0;
     DecodedInstruction instr = {};
 
-    switch (opcodes[file_data[i]]) {
+    switch (opcodes[memory.bytes[i]]) {
       case Instructions_Mov: {
-        instruction_size += instr.decodeMov(file_data, i);
+        instruction_size += instr.decodeMov(memory.bytes, i);
         instr.emitInstruction(output_file);
         break;
       }
@@ -385,7 +392,6 @@ int main(int argc, char **argv) {
         assert(false);
         break;
     }
-
 
     i += instruction_size;
   }
