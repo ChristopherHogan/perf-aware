@@ -89,7 +89,8 @@ enum Instructions {
   Instructions_Mov,
   Instructions_Add,
   Instructions_Sub,
-  Instructions_Cmp
+  Instructions_Cmp,
+  Instructions_Jnz
 };
 
 string instruction_strings[] = {
@@ -97,7 +98,8 @@ string instruction_strings[] = {
   "mov",
   "add",
   "sub",
-  "cmp"
+  "cmp",
+  "jnz"
 };
 
 unordered_map<u8, Instructions> opcodes = {
@@ -139,7 +141,19 @@ unordered_map<u8, Instructions> opcodes = {
   {0b10000011, Instructions_AddSubCmp},
 
   {0b00000100, Instructions_Add},
-  {0b00000101, Instructions_Add}
+  {0b00000101, Instructions_Add},
+
+  {0b00101000, Instructions_Sub},
+  {0b00101001, Instructions_Sub},
+  {0b00101010, Instructions_Sub},
+  {0b00101011, Instructions_Sub},
+
+  {0b00101100, Instructions_Sub},
+  {0b00101101, Instructions_Sub}
+
+  // {0b, Instructions_Cmp},
+
+  // {0b, Instructions_Jnz}
 
 };
 
@@ -157,6 +171,12 @@ enum AddVariants {
   AddVariants_ImmediateToAccumulator
 };
 
+enum SubVariants {
+  SubVariants_RMtoFromR,
+  SubVariants_ImmediateToRM,
+  SubVariants_ImmediateToAccumulator
+};
+
 unordered_map<u8, AddVariants> add_variants = {
   {0b00000000, AddVariants_RMtoFromR},
   {0b00000001, AddVariants_RMtoFromR},
@@ -168,6 +188,19 @@ unordered_map<u8, AddVariants> add_variants = {
   {0b10000011, AddVariants_ImmediateToRM},
   {0b00000100, AddVariants_ImmediateToAccumulator},
   {0b00000101, AddVariants_ImmediateToAccumulator}
+};
+
+unordered_map<u8, SubVariants> sub_variants = {
+  {0b00101000, SubVariants_RMtoFromR},
+  {0b00101001, SubVariants_RMtoFromR},
+  {0b00101010, SubVariants_RMtoFromR},
+  {0b00101011, SubVariants_RMtoFromR},
+  {0b10000000, SubVariants_ImmediateToRM},
+  {0b10000001, SubVariants_ImmediateToRM},
+  {0b10000010, SubVariants_ImmediateToRM},
+  {0b10000011, SubVariants_ImmediateToRM},
+  {0b00101100, SubVariants_ImmediateToAccumulator},
+  {0b00101101, SubVariants_ImmediateToAccumulator}
 };
 
 unordered_map<u8, MovVariants> mov_variants = {
@@ -237,7 +270,6 @@ struct Operand {
 struct DecodedInstruction {
   Operand dest;
   Operand source;
-  string instruction;  // TODO(chogan): remove
   Instructions opcode;
   u8 d_bit;
   u8 s_bit;
@@ -247,6 +279,73 @@ struct DecodedInstruction {
   u8 rm;
   u8 disp_lo;
   u8 disp_hi;
+
+  int decodeMov(const u8 *data, size_t offset) {
+    int num_bytes = 2;
+    u8 b1 = data[offset];
+    u8 b2 = data[offset + 1];
+    opcode = opcodes[b1];
+
+    switch (mov_variants[b1]) {
+      case MovVariants_RMtoFromR: {
+        rmToFromR(data, offset, num_bytes);
+        break;
+      }
+      case MovVariants_ImmediateToRM: {
+        immediateToRM(data, offset, num_bytes);
+        break;
+      }
+      case MovVariants_ImmediateToR: {
+        w_bit = (b1 & 0b00001000) >> 3;
+        d_bit = 1;
+        reg = b1 & 0b00000111;
+        u16 immediate = b2;
+        if (w_bit) {
+          immediate |= (data[offset + 2] << 8);
+          num_bytes++;
+        }
+        dest.type = OpType_Reg;
+        dest.val = (reg << 1) | w_bit;
+        source.type = OpType_Immediate;
+        source.immediate = immediate;
+        break;
+      }
+      case MovVariants_MemToAccumulator: {
+        w_bit = b1 & 0b00000001;
+        d_bit = 1;
+        u16 addr = b2;
+        if (w_bit) {
+          addr |= (data[offset + 2] << 8);
+          num_bytes++;
+        }
+        dest.type = OpType_Reg;
+        dest.val = Registers_ax;
+        source.type = OpType_Immediate;
+        source.immediate = addr;
+        source.mem = true;
+        break;
+      }
+      case MovVariants_AccumulatorToMem: {
+        w_bit = b1 & 0b00000001;
+        d_bit = 1;
+        u16 addr = b2;
+        if (w_bit) {
+          addr |= (data[offset + 2] << 8);
+          num_bytes++;
+        }
+        dest.type = OpType_Immediate;
+        dest.immediate = addr;
+        dest.mem = true;
+        source.type = OpType_Reg;
+        source.val = Registers_ax;
+        break;
+      }
+      default:
+        break;
+    }
+
+    return num_bytes;
+  }
 
   int decodeAdd(const u8 *data, size_t offset) {
     int num_bytes = 2;
@@ -271,12 +370,34 @@ struct DecodedInstruction {
     return num_bytes;
   }
 
+  int decodeSub(const u8 *data, size_t offset) {
+    int num_bytes = 2;
+    u8 b1 = data[offset];
+    opcode = Instructions_Sub;
+
+    switch (sub_variants[b1]) {
+      case SubVariants_RMtoFromR: {
+        rmToFromR(data, offset, num_bytes);
+        break;
+      }
+      case SubVariants_ImmediateToRM: {
+        immediateToRM(data, offset, num_bytes);
+        break;
+      }
+      case SubVariants_ImmediateToAccumulator: {
+        immediateToAccumulator(data, offset, num_bytes);
+        break;
+      }
+    }
+
+    return num_bytes;
+  }
   int getDisp(const u8 *data, size_t offset) {
     int num_bytes = 0;
-    if (mode == 0b01 || (mode == 0b00 && rm == 0b110 && !w_bit)) {
+    if (mode == 0b01) {
       disp_lo = data[offset + 2];
       num_bytes += 1;
-    } else if (mode == 0b10 || (mode == 0b00 && rm == 0b110 && w_bit)) {
+    } else if (mode == 0b10 || (mode == 0b00 && rm == 0b110)) {
       disp_lo = data[offset + 2];
       disp_hi = data[offset + 3];
       num_bytes += 2;
@@ -319,7 +440,7 @@ struct DecodedInstruction {
     u8 b2 = data[offset + 1];
     d_bit = 1;
     w_bit = b1 & 0b00000001;
-    if (opcode == Instructions_Add) {
+    if (opcode == Instructions_Add || opcode == Instructions_Sub || opcode == Instructions_Cmp) {
       s_bit = (b1 >> 1) & 1;
     } else {
       s_bit = 0;
@@ -424,73 +545,6 @@ struct DecodedInstruction {
     }
   }
 
-  int decodeMov(const u8 *data, size_t offset) {
-    int num_bytes = 2;
-    u8 b1 = data[offset];
-    u8 b2 = data[offset + 1];
-    opcode = opcodes[b1];
-
-    switch (mov_variants[b1]) {
-      case MovVariants_RMtoFromR: {
-        rmToFromR(data, offset, num_bytes);
-        break;
-      }
-      case MovVariants_ImmediateToRM: {
-        immediateToRM(data, offset, num_bytes);
-        break;
-      }
-      case MovVariants_ImmediateToR: {
-        w_bit = (b1 & 0b00001000) >> 3;
-        d_bit = 1;
-        reg = b1 & 0b00000111;
-        u16 immediate = b2;
-        if (w_bit) {
-          immediate |= (data[offset + 2] << 8);
-          num_bytes++;
-        }
-        dest.type = OpType_Reg;
-        dest.val = (reg << 1) | w_bit;
-        source.type = OpType_Immediate;
-        source.immediate = immediate;
-        break;
-      }
-      case MovVariants_MemToAccumulator: {
-        w_bit = b1 & 0b00000001;
-        d_bit = 1;
-        u16 addr = b2;
-        if (w_bit) {
-          addr |= (data[offset + 2] << 8);
-          num_bytes++;
-        }
-        dest.type = OpType_Reg;
-        dest.val = Registers_ax;
-        source.type = OpType_Immediate;
-        source.immediate = addr;
-        source.mem = true;
-        break;
-      }
-      case MovVariants_AccumulatorToMem: {
-        w_bit = b1 & 0b00000001;
-        d_bit = 1;
-        u16 addr = b2;
-        if (w_bit) {
-          addr |= (data[offset + 2] << 8);
-          num_bytes++;
-        }
-        dest.type = OpType_Immediate;
-        dest.immediate = addr;
-        dest.mem = true;
-        source.type = OpType_Reg;
-        source.val = Registers_ax;
-        break;
-      }
-      default:
-        break;
-    }
-
-    return num_bytes;
-  }
-
   void emitInstruction(ofstream &os) {
     string instr = instruction_strings[opcode];
     instr += " ";
@@ -573,12 +627,16 @@ int main(int argc, char **argv) {
           instruction_size += instr.decodeAdd(memory.bytes, i);
         break;
       }
+      case Instructions_Sub: {
+          instruction_size += instr.decodeSub(memory.bytes, i);
+        break;
+      }
       case Instructions_AddSubCmp: {
         Instructions inst = dispatchAddSubCmp(memory.bytes, i);
         if (inst == Instructions_Add) {
           instruction_size += instr.decodeAdd(memory.bytes, i);
         } else if (inst == Instructions_Sub) {
-
+          instruction_size += instr.decodeSub(memory.bytes, i);
         } else if (inst == Instructions_Cmp) {
 
         } else {
