@@ -8,6 +8,7 @@ files=(
     "listing_0038_many_register_mov"
     "listing_0039_more_movs"
     "listing_0040_challenge_movs"
+    "listing_0041_add_sub_cmp_jnz"
 )
 
 if [[ ! -z "${TEST}" ]]; then
