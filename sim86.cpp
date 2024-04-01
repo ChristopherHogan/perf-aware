@@ -231,6 +231,7 @@ struct Operand {
   u16 disp;
   u16 immediate;
   u8 val;
+  bool mem;
 };
 
 struct DecodedInstruction {
@@ -262,6 +263,7 @@ struct DecodedInstruction {
         break;
       }
       case AddVariants_ImmediateToAccumulator: {
+        immediateToAccumulator(data, offset, num_bytes);
         break;
       }
     }
@@ -283,12 +285,45 @@ struct DecodedInstruction {
     return num_bytes;
   }
 
+  string opToString(Operand *op, bool needs_immediate_size) {
+    string result;
+    if (op->type == OpType_Reg) {
+      result += registers[op->val];
+    } else if (op->type == OpType_Eac) {
+      if (mode == 0b00 && op->disp != 0) {
+        result += "[";
+        result += to_string(op->disp);
+      } else {
+        result += effective_address_calculations[op->val];
+      }
+      if ((s16)op->disp < 0) {
+        result += " - ";
+        result += to_string((s16)op->disp * -1);
+      } else {
+        result += " + ";
+        result += to_string(op->disp);
+      }
+      result += "]";
+    } else if (op->type == OpType_Immediate) {
+      if (needs_immediate_size) {
+        result += w_bit ? "word " : "byte ";
+      }
+      string imm = op->mem ? "[" + to_string(op->immediate) + "]" : to_string(op->immediate);
+      result += imm;
+    }
+    return result;
+  }
+
   void immediateToRM(const u8 *data, size_t offset, int &num_bytes) {
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
     d_bit = 1;
     w_bit = b1 & 0b00000001;
-    s_bit = (b1 >> 1) & 1;
+    if (opcode == Instructions_Add) {
+      s_bit = (b1 >> 1) & 1;
+    } else {
+      s_bit = 0;
+    }
     mode = (b2 & 0b11000000) >> 6;
     rm = b2 & 0b00000111;
 
@@ -311,7 +346,7 @@ struct DecodedInstruction {
     source.type = OpType_Immediate;
     u8 immediate = data[offset + num_bytes];
     num_bytes++;
-    if (w_bit & !s_bit) {
+    if (w_bit && !s_bit) {
       source.immediate = (data[offset + num_bytes] << 8) | immediate;
       num_bytes++;
     } else {
@@ -340,11 +375,9 @@ struct DecodedInstruction {
       dest.type = OpType_Reg;
       dest.val = (reg << 1) | w_bit;
       if (rm == 0b110) {
-        if (w_bit) {
-          source.disp = disp_lo | (disp_hi << 8);
-        } else {
-          source.disp = disp_lo;
-        }
+        source.type = OpType_Immediate;
+        source.immediate = disp_lo | (disp_hi << 8);
+        source.mem = true;
       } else {
         source.type = OpType_Eac;
         source.val = rm;
@@ -354,6 +387,10 @@ struct DecodedInstruction {
       dest.val = (reg << 1) | w_bit;
       source.type = OpType_Eac;
       source.val = rm;
+      source.disp = disp_lo;
+      if ((s8)disp_lo < 0) {
+        source.disp = (0xFF << 8) | disp_lo;
+      }
     } else if (mode == 0b10) {
       dest.type = OpType_Reg;
       dest.val = (reg << 1) | w_bit;
@@ -363,172 +400,93 @@ struct DecodedInstruction {
     }
   }
 
+  void immediateToAccumulator(const u8 *data, size_t offset, int &num_bytes) {
+    num_bytes--;
+    u8 b1 = data[offset];
+    d_bit = 1;
+    w_bit = b1 & 0b00000001;
+
+    dest.type = OpType_Reg;
+    if (w_bit) {
+      dest.val = Registers_ax;
+    } else {
+      dest.val = Registers_al;
+    }
+
+    source.type = OpType_Immediate;
+    u8 immediate = data[offset + num_bytes];
+    num_bytes++;
+    if (w_bit) {
+      source.immediate = (data[offset + num_bytes] << 8) | immediate;
+      num_bytes++;
+    } else {
+      source.immediate = immediate;
+    }
+  }
+
   int decodeMov(const u8 *data, size_t offset) {
     int num_bytes = 2;
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
-    instruction = instruction_strings[opcodes[b1]];
-    instruction += " ";
-    string dest;
-    string source;
+    opcode = opcodes[b1];
 
     switch (mov_variants[b1]) {
       case MovVariants_RMtoFromR: {
-        d_bit = (b1 & 0b00000010) >> 1;
-        w_bit = b1 & 0b00000001;
-
-        mode = (b2 & 0b11000000) >> 6;
-        reg = (b2 & 0b00111000) >> 3;
-        rm = (b2 & 0b00000111);
-
-        if (mode == 0b01 || (mode == 0b00 && rm == 0b110 && !w_bit)) {
-          disp_lo = data[offset + 2];
-          num_bytes += 1;
-        } else if (mode == 0b10 || (mode == 0b00 && rm == 0b110 && w_bit)) {
-          disp_lo = data[offset + 2];
-          disp_hi = data[offset + 3];
-          num_bytes += 2;
-        }
-
-        if (mode == 0b11) {
-          dest = getRegister(reg, w_bit);
-          source = getRegister(rm, w_bit);
-        } else if (mode == 0b00) {
-          dest = getRegister(reg, w_bit);
-          if (rm == 0b110) {
-            source = "[";
-            if (w_bit) {
-              source += to_string(disp_lo | (disp_hi << 8));
-            } else {
-              source += to_string(disp_lo);
-            }
-          } else {
-            source = effective_address_calculations[rm];
-          }
-          source += "]";
-        } else if (mode == 0b01) {
-          dest = getRegister(reg, w_bit);
-          source = effective_address_calculations[rm];
-          if ((s8)disp_lo < 0) {
-            source += " - ";
-            disp_lo = ~disp_lo + 1;
-          } else {
-            source += " + ";
-          }
-          source += to_string(disp_lo);
-          source += "]";
-        } else if (mode == 0b10) {
-          dest = getRegister(reg, w_bit);
-          source = effective_address_calculations[rm];
-          u16 immediate = disp_lo | (disp_hi << 8);
-          if ((s16)immediate < 0) {
-            source += " - ";
-            immediate = ~immediate + 1;
-          } else {
-            source += " + ";
-          }
-          source += to_string(immediate);
-          source += "]";
-        }
-
-        if (!d_bit) {
-          std::swap(dest, source);
-        }
-
+        rmToFromR(data, offset, num_bytes);
         break;
       }
       case MovVariants_ImmediateToRM: {
-        w_bit = b1 & 0b00000001;
-        mode = (b2 & 0b11000000) >> 6;
-        rm = b2 & 0b00000111;
-
-        if (mode == 0b01 || (mode == 0b00 && rm == 0b110 && !w_bit)) {
-          disp_lo = data[offset + 2];
-          num_bytes += 1;
-        } else if (mode == 0b10 || (mode == 0b00 && rm == 0b110 && w_bit)) {
-          disp_lo = data[offset + 2];
-          disp_hi = data[offset + 3];
-          num_bytes += 2;
-        }
-
-        if (mode == 0b11) {
-          assert(false);
-        } else if (mode == 0b00) {
-          dest = effective_address_calculations[rm];
-          if (rm == 0b110) {
-            dest += " + ";
-            if (w_bit) {
-              dest += to_string(disp_lo | (disp_hi << 8));
-            } else {
-              dest += to_string(disp_lo);
-            }
-          }
-          dest += "]";
-        } else if (mode == 0b01) {
-          dest = effective_address_calculations[rm];
-          dest += " + ";
-          dest += to_string(disp_lo);
-          dest += "]";
-        } else if (mode == 0b10) {
-          dest = effective_address_calculations[rm];
-          dest += " + ";
-          dest += to_string(disp_lo | (disp_hi << 8));
-          dest += "]";
-        }
-
-        u16 immediate = data[offset + num_bytes];
-        num_bytes++;
-        if (w_bit) {
-          immediate |= (data[offset + num_bytes] << 8);
-          num_bytes++;
-        }
-
-        source = w_bit ? "word " : "byte ";
-        source += to_string(immediate);
+        immediateToRM(data, offset, num_bytes);
         break;
       }
       case MovVariants_ImmediateToR: {
         w_bit = (b1 & 0b00001000) >> 3;
+        d_bit = 1;
         reg = b1 & 0b00000111;
         u16 immediate = b2;
         if (w_bit) {
           immediate |= (data[offset + 2] << 8);
           num_bytes++;
         }
-        dest = getRegister(reg, w_bit);
-        source = to_string(immediate);
+        dest.type = OpType_Reg;
+        dest.val = (reg << 1) | w_bit;
+        source.type = OpType_Immediate;
+        source.immediate = immediate;
         break;
       }
       case MovVariants_MemToAccumulator: {
         w_bit = b1 & 0b00000001;
+        d_bit = 1;
         u16 addr = b2;
         if (w_bit) {
           addr |= (data[offset + 2] << 8);
           num_bytes++;
         }
-        dest = "ax";
-        source = "[" + to_string(addr) + "]";
-
+        dest.type = OpType_Reg;
+        dest.val = Registers_ax;
+        source.type = OpType_Immediate;
+        source.immediate = addr;
+        source.mem = true;
         break;
       }
       case MovVariants_AccumulatorToMem: {
         w_bit = b1 & 0b00000001;
-        source = "ax";
+        d_bit = 1;
         u16 addr = b2;
         if (w_bit) {
           addr |= (data[offset + 2] << 8);
           num_bytes++;
         }
-        dest = "[" + to_string(addr) + "]";
+        dest.type = OpType_Immediate;
+        dest.immediate = addr;
+        dest.mem = true;
+        source.type = OpType_Reg;
+        source.val = Registers_ax;
         break;
       }
       default:
         break;
     }
-
-    instruction += dest;
-    instruction += ", ";
-    instruction += source;
 
     return num_bytes;
   }
@@ -536,39 +494,9 @@ struct DecodedInstruction {
   void emitInstruction(ofstream &os) {
     string instr = instruction_strings[opcode];
     instr += " ";
-    string dst;
-    string src;
-
-    if (dest.type == OpType_Reg) {
-      dst += registers[dest.val];
-    } else if (dest.type == OpType_Eac) {
-      dst += effective_address_calculations[dest.val];
-    }
-
-    if (source.type == OpType_Reg) {
-      src += registers[source.val];
-    } else if (source.type == OpType_Eac) {
-      if (mode == 0b00 && source.disp != 0) {
-        src += "[";
-        src += to_string(source.disp);
-      } else {
-        src += effective_address_calculations[source.val];
-      }
-      u16 sign_extended_disp = source.disp;
-      if ((s16)source.disp < 0) {
-        src += " - ";
-        sign_extended_disp = ~source.disp + 1;
-      } else {
-        src += " + ";
-      }
-      src += to_string(sign_extended_disp);
-      src += "]";
-    } else if (source.type == OpType_Immediate) {
-      if (dest.type != OpType_Reg) {
-        src += w_bit ? "word " : "byte ";
-      }
-      src += to_string(source.immediate);
-    }
+    bool needs_immediate_size = dest.type == OpType_Eac;
+    string dst = opToString(&dest, false);
+    string src = opToString(&source, needs_immediate_size);
 
     if (!d_bit) {
       std::swap(dst, src);
@@ -639,19 +567,16 @@ int main(int argc, char **argv) {
     switch (opcodes[memory.bytes[i]]) {
       case Instructions_Mov: {
         instruction_size += instr.decodeMov(memory.bytes, i);
-        output_file << instr.instruction << endl;
         break;
       }
       case Instructions_Add: {
           instruction_size += instr.decodeAdd(memory.bytes, i);
-          instr.emitInstruction(output_file);
         break;
       }
       case Instructions_AddSubCmp: {
         Instructions inst = dispatchAddSubCmp(memory.bytes, i);
         if (inst == Instructions_Add) {
           instruction_size += instr.decodeAdd(memory.bytes, i);
-          instr.emitInstruction(output_file);
         } else if (inst == Instructions_Sub) {
 
         } else if (inst == Instructions_Cmp) {
@@ -665,6 +590,7 @@ int main(int argc, char **argv) {
         assert(false);
         break;
     }
+    instr.emitInstruction(output_file);
     i += instruction_size;
   }
 
