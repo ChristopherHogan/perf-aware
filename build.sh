@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 time g++ -O3 -g -Wall -Wextra --std=c++20 -o sim86 sim86.cpp
 time g++ -ggdb3 -O0 -Wall -Wextra --std=c++20 -o sim86db sim86.cpp
 

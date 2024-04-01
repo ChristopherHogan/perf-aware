@@ -93,6 +93,22 @@ enum Instructions {
   Instructions_Jnz
 };
 
+enum OpType {
+  OpType_None,
+  OpType_Reg,
+  OpType_Eac,
+  OpType_Immediate
+};
+
+struct Operand {
+  OpType type;
+  u16 disp;
+  u16 immediate;
+  u8 val;
+  bool mem;
+  bool relative;
+};
+
 string instruction_strings[] = {
   "",
   "mov",
@@ -154,7 +170,9 @@ unordered_map<u8, Instructions> opcodes = {
   {0b00111010, Instructions_Cmp},
   {0b00111011, Instructions_Cmp},
   {0b00111100, Instructions_Cmp},
-  {0b00111101, Instructions_Cmp}
+  {0b00111101, Instructions_Cmp},
+
+  {0b01110101, Instructions_Jnz}
 };
 
 enum MovVariants {
@@ -271,20 +289,6 @@ string getRegister(u8 byte, u8 w_bit) {
 
   return result;
 }
-
-enum OpType {
-  OpType_Reg,
-  OpType_Eac,
-  OpType_Immediate
-};
-
-struct Operand {
-  OpType type;
-  u16 disp;
-  u16 immediate;
-  u8 val;
-  bool mem;
-};
 
 struct DecodedInstruction {
   Operand dest;
@@ -435,6 +439,22 @@ struct DecodedInstruction {
     return num_bytes;
   }
 
+  int decodeJnz(const u8 *data, size_t offset) {
+    int num_bytes = 2;
+    u8 b1 = data[offset];
+    // NOTE(chogan): Signify that the immediate is only 1 byte (IP-INC8)
+    w_bit = 0;
+    opcode = opcodes[b1];
+    d_bit = 1;
+    dest.type = OpType_Immediate;
+    dest.relative = true;
+    dest.immediate = (u16)data[offset + 1];
+    dest.immediate += 2;
+    source.type = OpType_None;
+
+    return num_bytes;
+  }
+
   int getDisp(const u8 *data, size_t offset) {
     int num_bytes = 0;
     if (mode == 0b01) {
@@ -472,7 +492,28 @@ struct DecodedInstruction {
       if (needs_immediate_size) {
         result += w_bit ? "word " : "byte ";
       }
-      string imm = op->mem ? "[" + to_string(op->immediate) + "]" : to_string(op->immediate);
+
+      string imm;
+      if (op->relative) {
+        imm += "$";
+        // TODO(chogan): 16 bit relative offset
+        // if (w_bit) {
+        //   s16 signed_immediate = (s16)op->immediate;
+        // }
+        s8 signed_immediate = (s8)op->immediate;
+        if (signed_immediate < 0) {
+          imm += "-";
+          signed_immediate *= -1;
+        } else {
+          imm += "+";
+        }
+        imm += to_string(signed_immediate);
+      } else if (op->mem) {
+        imm += "[" + to_string(op->immediate) + "]";
+      } else {
+        imm += to_string(op->immediate);
+      }
+
       result += imm;
     }
     return result;
@@ -604,8 +645,10 @@ struct DecodedInstruction {
     }
 
     instr += dst;
-    instr += ", ";
-    instr += src;
+    if (!src.empty()) {
+      instr += ", ";
+      instr += src;
+    }
     os << instr << endl;
   }
 };
@@ -680,6 +723,10 @@ int main(int argc, char **argv) {
       }
       case Instructions_Cmp: {
         instruction_size += instr.decodeCmp(memory.bytes, i);
+        break;
+      }
+      case Instructions_Jnz: {
+        instruction_size += instr.decodeJnz(memory.bytes, i);
         break;
       }
       case Instructions_AddSubCmp: {
