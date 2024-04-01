@@ -130,16 +130,15 @@ unordered_map<u8, Instructions> opcodes = {
   {0b10100010, Instructions_Mov},
   {0b10100011, Instructions_Mov},
 
-  {0b00000000, Instructions_Add},
-  {0b00000001, Instructions_Add},
-  {0b00000010, Instructions_Add},
-  {0b00000011, Instructions_Add},
-
   {0b10000000, Instructions_AddSubCmp},
   {0b10000001, Instructions_AddSubCmp},
   {0b10000010, Instructions_AddSubCmp},
   {0b10000011, Instructions_AddSubCmp},
 
+  {0b00000000, Instructions_Add},
+  {0b00000001, Instructions_Add},
+  {0b00000010, Instructions_Add},
+  {0b00000011, Instructions_Add},
   {0b00000100, Instructions_Add},
   {0b00000101, Instructions_Add},
 
@@ -147,14 +146,15 @@ unordered_map<u8, Instructions> opcodes = {
   {0b00101001, Instructions_Sub},
   {0b00101010, Instructions_Sub},
   {0b00101011, Instructions_Sub},
-
   {0b00101100, Instructions_Sub},
-  {0b00101101, Instructions_Sub}
+  {0b00101101, Instructions_Sub},
 
-  // {0b, Instructions_Cmp},
-
-  // {0b, Instructions_Jnz}
-
+  {0b00111000, Instructions_Cmp},
+  {0b00111001, Instructions_Cmp},
+  {0b00111010, Instructions_Cmp},
+  {0b00111011, Instructions_Cmp},
+  {0b00111100, Instructions_Cmp},
+  {0b00111101, Instructions_Cmp}
 };
 
 enum MovVariants {
@@ -175,6 +175,12 @@ enum SubVariants {
   SubVariants_RMtoFromR,
   SubVariants_ImmediateToRM,
   SubVariants_ImmediateToAccumulator
+};
+
+enum CmpVariants {
+  CmpVariants_RMtoFromR,
+  CmpVariants_ImmediateToRM,
+  CmpVariants_ImmediateToAccumulator
 };
 
 unordered_map<u8, AddVariants> add_variants = {
@@ -201,6 +207,19 @@ unordered_map<u8, SubVariants> sub_variants = {
   {0b10000011, SubVariants_ImmediateToRM},
   {0b00101100, SubVariants_ImmediateToAccumulator},
   {0b00101101, SubVariants_ImmediateToAccumulator}
+};
+
+unordered_map<u8, CmpVariants> cmp_variants = {
+  {0b00111000, CmpVariants_RMtoFromR},
+  {0b00111001, CmpVariants_RMtoFromR},
+  {0b00111010, CmpVariants_RMtoFromR},
+  {0b00111011, CmpVariants_RMtoFromR},
+  {0b10000000, CmpVariants_ImmediateToRM},
+  {0b10000001, CmpVariants_ImmediateToRM},
+  {0b10000010, CmpVariants_ImmediateToRM},
+  {0b10000011, CmpVariants_ImmediateToRM},
+  {0b00111100, CmpVariants_ImmediateToAccumulator},
+  {0b00111101, CmpVariants_ImmediateToAccumulator}
 };
 
 unordered_map<u8, MovVariants> mov_variants = {
@@ -392,6 +411,30 @@ struct DecodedInstruction {
 
     return num_bytes;
   }
+
+  int decodeCmp(const u8 *data, size_t offset) {
+    int num_bytes = 2;
+    u8 b1 = data[offset];
+    opcode = Instructions_Cmp;
+
+    switch (cmp_variants[b1]) {
+      case CmpVariants_RMtoFromR: {
+        rmToFromR(data, offset, num_bytes);
+        break;
+      }
+      case CmpVariants_ImmediateToRM: {
+        immediateToRM(data, offset, num_bytes);
+        break;
+      }
+      case CmpVariants_ImmediateToAccumulator: {
+        immediateToAccumulator(data, offset, num_bytes);
+        break;
+      }
+    }
+
+    return num_bytes;
+  }
+
   int getDisp(const u8 *data, size_t offset) {
     int num_bytes = 0;
     if (mode == 0b01) {
@@ -458,7 +501,11 @@ struct DecodedInstruction {
       dest.val = rm;
     }
 
-    if ((mode == 0b00 && rm == 0b110 && w_bit) || mode == 0b10) {
+    if (mode == 0b00 && rm == 0b110) {
+      dest.type = OpType_Immediate;
+      dest.immediate = disp_lo | (disp_hi << 8);
+      dest.mem = true;
+    } else if (mode == 0b10) {
       dest.disp = disp_lo | (disp_hi << 8);
     } else {
       dest.disp = disp_lo;
@@ -548,7 +595,7 @@ struct DecodedInstruction {
   void emitInstruction(ofstream &os) {
     string instr = instruction_strings[opcode];
     instr += " ";
-    bool needs_immediate_size = dest.type == OpType_Eac;
+    bool needs_immediate_size = dest.type == OpType_Eac || (dest.type == OpType_Immediate && dest.mem);
     string dst = opToString(&dest, false);
     string src = opToString(&source, needs_immediate_size);
 
@@ -631,6 +678,10 @@ int main(int argc, char **argv) {
           instruction_size += instr.decodeSub(memory.bytes, i);
         break;
       }
+      case Instructions_Cmp: {
+        instruction_size += instr.decodeCmp(memory.bytes, i);
+        break;
+      }
       case Instructions_AddSubCmp: {
         Instructions inst = dispatchAddSubCmp(memory.bytes, i);
         if (inst == Instructions_Add) {
@@ -638,7 +689,7 @@ int main(int argc, char **argv) {
         } else if (inst == Instructions_Sub) {
           instruction_size += instr.decodeSub(memory.bytes, i);
         } else if (inst == Instructions_Cmp) {
-
+          instruction_size += instr.decodeCmp(memory.bytes, i);
         } else {
           // TODO(chogan): ERROR
         }
