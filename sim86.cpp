@@ -1,15 +1,18 @@
-
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <unordered_map>
 
+#ifndef SIM86_MAIN
+  #define SIM86_MAIN 1
+#endif
+
 namespace fs = std::filesystem;
 
-using std::cout;
 using std::endl;
 using std::ifstream;
 using std::ofstream;
@@ -25,13 +28,15 @@ typedef int8_t s8;
 typedef int16_t s16;
 
 const int kRegisterSize = 16;
+const int kNumRegisters = 8;
 
 #define KILOBYTES(n) (n * 1024)
 #define MEGABYTES(n) (n * KILOBYTES(1) * KILOBYTES(1))
 
-struct Memory {
-  u32 used;
-  u8 bytes[MEGABYTES(1)];
+enum AddressingMode {
+  AddressingMode_l,
+  AddressingMode_h,
+  AddressingMode_x
 };
 
 enum Registers {
@@ -51,6 +56,48 @@ enum Registers {
   Registers_si,
   Registers_bh,
   Registers_di,
+};
+
+enum Instructions {
+  Instructions_AddSubCmp,
+  Instructions_Mov,
+  Instructions_Add,
+  Instructions_Sub,
+  Instructions_Cmp,
+  Instructions_Jnz
+};
+
+enum OpType {
+  OpType_None,
+  OpType_Reg,
+  OpType_Eac,
+  OpType_Immediate
+};
+
+enum MovVariants {
+  MovVariants_RMtoFromR,
+  MovVariants_ImmediateToRM,
+  MovVariants_ImmediateToR,
+  MovVariants_MemToAccumulator,
+  MovVariants_AccumulatorToMem,
+};
+
+enum AddVariants {
+  AddVariants_RMtoFromR,
+  AddVariants_ImmediateToRM,
+  AddVariants_ImmediateToAccumulator
+};
+
+enum SubVariants {
+  SubVariants_RMtoFromR,
+  SubVariants_ImmediateToRM,
+  SubVariants_ImmediateToAccumulator
+};
+
+enum CmpVariants {
+  CmpVariants_RMtoFromR,
+  CmpVariants_ImmediateToRM,
+  CmpVariants_ImmediateToAccumulator
 };
 
 // NOTE(chogan): 3 bits for register, 1 bit for w (8 or 16 bit)
@@ -82,31 +129,6 @@ unordered_map<u8, string> effective_address_calculations = {
   {0b101, "[di"},
   {0b110, "[bp"},
   {0b111, "[bx"},
-};
-
-enum Instructions {
-  Instructions_AddSubCmp,
-  Instructions_Mov,
-  Instructions_Add,
-  Instructions_Sub,
-  Instructions_Cmp,
-  Instructions_Jnz
-};
-
-enum OpType {
-  OpType_None,
-  OpType_Reg,
-  OpType_Eac,
-  OpType_Immediate
-};
-
-struct Operand {
-  OpType type;
-  u16 disp;
-  u16 immediate;
-  u8 val;
-  bool mem;
-  bool relative;
 };
 
 string instruction_strings[] = {
@@ -173,32 +195,6 @@ unordered_map<u8, Instructions> opcodes = {
   {0b00111101, Instructions_Cmp},
 
   {0b01110101, Instructions_Jnz}
-};
-
-enum MovVariants {
-  MovVariants_RMtoFromR,
-  MovVariants_ImmediateToRM,
-  MovVariants_ImmediateToR,
-  MovVariants_MemToAccumulator,
-  MovVariants_AccumulatorToMem,
-};
-
-enum AddVariants {
-  AddVariants_RMtoFromR,
-  AddVariants_ImmediateToRM,
-  AddVariants_ImmediateToAccumulator
-};
-
-enum SubVariants {
-  SubVariants_RMtoFromR,
-  SubVariants_ImmediateToRM,
-  SubVariants_ImmediateToAccumulator
-};
-
-enum CmpVariants {
-  CmpVariants_RMtoFromR,
-  CmpVariants_ImmediateToRM,
-  CmpVariants_ImmediateToAccumulator
 };
 
 unordered_map<u8, AddVariants> add_variants = {
@@ -269,26 +265,61 @@ unordered_map<u8, MovVariants> mov_variants = {
   {0b10100011, MovVariants_AccumulatorToMem}
 };
 
-void readEntireFile(Memory *memory, const char *fname) {
-  fs::path p(fname);
-  auto sz = fs::file_size(p);
+struct Arguments {
+  char *fname;
+  bool exec;
+};
 
-  ifstream is(fname, std::ios::binary);
-  if (is.is_open()) {
-    is.read(reinterpret_cast<char*>(memory->bytes), sz);
-    memory->used = sz;
-  } else {
-    // TODO(chogan): error handling
-  }
-}
+struct Memory {
+  u32 used;
+  u8 bytes[MEGABYTES(1)];
+};
 
-string getRegister(u8 byte, u8 w_bit) {
-  byte <<= 1;
-  byte |= w_bit;
-  string result = registers[byte];
+struct Operand {
+  OpType type;
+  u16 disp;
+  u16 immediate;
+  u8 val;
+  bool mem;
+  bool relative;
+};
 
-  return result;
-}
+struct RegisterAccess {
+  u32 index;
+  AddressingMode mode;
+};
+
+RegisterAccess access_patterns[] = {
+  [Registers_al] = {0, AddressingMode_l},
+  [Registers_ax] = {0, AddressingMode_x},
+  [Registers_cl] = {2, AddressingMode_l},
+  [Registers_cx] = {2, AddressingMode_x},
+  [Registers_dl] = {3, AddressingMode_l},
+  [Registers_dx] = {3, AddressingMode_x},
+  [Registers_bl] = {1, AddressingMode_l},
+  [Registers_bx] = {1, AddressingMode_x},
+  [Registers_ah] = {0, AddressingMode_h},
+  [Registers_sp] = {4, AddressingMode_x},
+  [Registers_ch] = {2, AddressingMode_h},
+  [Registers_bp] = {5, AddressingMode_x},
+  [Registers_dh] = {3, AddressingMode_h},
+  [Registers_si] = {6, AddressingMode_x},
+  [Registers_bh] = {1, AddressingMode_h},
+  [Registers_di] = {7, AddressingMode_x}
+};
+
+union Register {
+  struct {
+    u8 l;
+    u8 h;
+  } byte;
+  u16 x;
+};
+
+struct MachineState {
+  Register prev[8];
+  Register registers[8];
+};
 
 struct DecodedInstruction {
   Operand dest;
@@ -633,7 +664,7 @@ struct DecodedInstruction {
     }
   }
 
-  void emitInstruction(ofstream &os) {
+  void emitInstruction(ofstream &os, MachineState *state) {
     string instr = instruction_strings[opcode];
     instr += " ";
     bool needs_immediate_size = dest.type == OpType_Eac || (dest.type == OpType_Immediate && dest.mem);
@@ -649,9 +680,73 @@ struct DecodedInstruction {
       instr += ", ";
       instr += src;
     }
-    os << instr << endl;
+    os << instr;
+    if (state) {
+      int index = access_patterns[dest.val].index;
+      u16 previous = state->prev[index].x;
+      u16 current = state->registers[index].x;
+      os << "  ; " << registers[dest.val] << ":0x" << std::hex << previous << "->0x" << current << std::dec;
+    }
+    os << endl;
   }
 };
+
+void execMov(DecodedInstruction *instr, MachineState *state) {
+  if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Immediate) {
+    RegisterAccess access = access_patterns[instr->dest.val];
+    u32 index = access.index;
+    if (access.mode == AddressingMode_x) {
+      assert(instr->w_bit);
+      state->prev[index].x = state->registers[index].x;
+      state->registers[index].x = instr->source.immediate;
+    } else if (access.mode == AddressingMode_l) {
+      state->prev[index].byte.l = state->registers[index].byte.l;
+      state->registers[index].byte.l = (u8)instr->source.immediate;
+    } else if (access.mode == AddressingMode_h) {
+      state->prev[index].byte.h = state->registers[index].byte.h;
+      state->registers[index].byte.h = (u8)instr->source.immediate;
+    }
+  }
+}
+
+void execInstruction(DecodedInstruction *instr, MachineState *state) {
+  switch (instr->opcode) {
+    case Instructions_Mov:
+      execMov(instr, state);
+      break;
+    case Instructions_Add:
+      break;
+    case Instructions_Sub:
+      break;
+    case Instructions_Cmp:
+      break;
+    case Instructions_Jnz:
+      break;
+    default:
+      break;
+  }
+}
+
+void readEntireFile(Memory *memory, const char *fname) {
+  fs::path p(fname);
+  auto sz = fs::file_size(p);
+
+  ifstream is(fname, std::ios::binary);
+  if (is.is_open()) {
+    is.read(reinterpret_cast<char*>(memory->bytes), sz);
+    memory->used = sz;
+  } else {
+    // TODO(chogan): error handling
+  }
+}
+
+string getRegister(u8 byte, u8 w_bit) {
+  byte <<= 1;
+  byte |= w_bit;
+  string result = registers[byte];
+
+  return result;
+}
 
 Instructions dispatchAddSubCmp(const u8 *data, size_t offset) {
   u8 b2 = data[offset + 1];
@@ -666,6 +761,7 @@ Instructions dispatchAddSubCmp(const u8 *data, size_t offset) {
     result = Instructions_Cmp;
   } else {
     // TODO(chogan): ERROR
+    fprintf(stderr, "ERROR: 0x%x is not an add, sub, or cmp opcode\n", bits);
   }
 
   return result;
@@ -682,23 +778,16 @@ string getOutputFilename(char *fname) {
   }
 
   string result(fname, cur - fname);
+  result += "_decoded.asm";
 
-  return result + "_decoded.asm";
+  return result;
 }
 
-int main(int argc, char **argv) {
-  char *fname = 0;
-
-  if (argc > 0) {
-    fname = argv[1];
-  } else {
-    // TODO(chogan): error handling
-  }
-
+void run(Arguments *args, MachineState *state) {
   Memory memory = {};
-  readEntireFile(&memory, fname);
+  readEntireFile(&memory, args->fname);
 
-  string output_fname = getOutputFilename(fname);
+  string output_fname = getOutputFilename(args->fname);
   ofstream output_file(output_fname);
   output_file << "bits " << to_string(kRegisterSize) << endl;
 
@@ -746,9 +835,51 @@ int main(int argc, char **argv) {
         assert(false);
         break;
     }
-    instr.emitInstruction(output_file);
+
+    if (args->exec) {
+      execInstruction(&instr, state);
+      instr.emitInstruction(output_file, state);
+    } else {
+      instr.emitInstruction(output_file, NULL);
+    }
+
     i += instruction_size;
   }
 
+  if (args->exec) {
+    printf("Final registers:\n");
+    const char *reg_names[] = {"ax", "bx", "cx", "dx", "sp", "dp", "si", "di"};
+    for (int i = 0; i < kNumRegisters; ++i) {
+      const char *reg = reg_names[i];
+      u16 hex = state->registers[i].x;
+      printf("\t%s: 0x%04x (%d)\n", reg, hex, hex);
+    }
+  }
+
+}
+
+Arguments parseArgs(int argc, char **argv) {
+  Arguments result = {};
+
+  if (argc == 2) {
+    result.fname = argv[1];
+  } else if (argc == 3 && strcmp(argv[1], "-exec") == 0){
+    result.exec = true;
+    result.fname = argv[2];
+  } else {
+    fprintf(stderr, "USAGE: %s [-exec] <8086_asm_filename>\n", argv[0]);
+    exit(1);
+  }
+
+  return result;
+}
+
+#if SIM86_MAIN == 1
+int main(int argc, char **argv) {
+  Arguments args = parseArgs(argc, argv);
+  MachineState state = {};
+  run(&args, &state);
+
   return 0;
 }
+#endif
