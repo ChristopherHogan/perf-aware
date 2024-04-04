@@ -10,6 +10,7 @@ decode_files=(
     "listing_0041_add_sub_cmp_jnz"
     "listing_0043_immediate_movs"
     "listing_0044_register_movs"
+    "listing_0046_add_sub_cmp"
 )
 
 release_flags="-O3 -g"

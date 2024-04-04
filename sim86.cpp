@@ -33,6 +33,15 @@ const int kNumRegisters = 8;
 #define KILOBYTES(n) (n * 1024)
 #define MEGABYTES(n) (n * KILOBYTES(1) * KILOBYTES(1))
 
+enum Flags : u8 {
+  Flags_Carry = (1 << 0),
+  Flags_Parity = (1 << 1),
+  Flags_AuxiliaryCarry = (1 << 2),
+  Flags_Zero = (1 << 3),
+  Flags_Sign = (1 << 4),
+  Flags_Overflow = (1 << 5)
+};
+
 enum AddressingMode {
   AddressingMode_l,
   AddressingMode_h,
@@ -319,6 +328,21 @@ union Register {
 struct MachineState {
   Register prev[8];
   Register registers[8];
+  u8 prev_flags;
+  u8 flags;
+};
+
+union ByteOrNibble{
+  u8 bits8;
+  u16 bits16;
+};
+
+struct ExecutionDetails {
+  RegisterAccess dest;
+  RegisterAccess source;
+  ByteOrNibble source_val;
+  ByteOrNibble result;
+  bool hi;
 };
 
 struct DecodedInstruction {
@@ -682,42 +706,155 @@ struct DecodedInstruction {
       u16 previous = state->prev[index].x;
       u16 current = state->registers[index].x;
       os << "  ; " << registers[dest.val] << ":0x" << std::hex << previous << "->0x" << current << std::dec;
+
+      if ((state->flags || state->prev_flags) &&
+          (opcode == Instructions_Add || opcode == Instructions_Sub || opcode == Instructions_Cmp)) {
+        os << " flags:";
+        if (state->prev_flags & Flags_Zero) {
+          os << "Z";
+        }
+        if (state->prev_flags & Flags_Sign) {
+          os << "S";
+        }
+        os << "->";
+        if (state->flags & Flags_Zero) {
+          os << "Z";
+        }
+        if (state->flags & Flags_Sign) {
+          os << "S";
+        }
+      }
     }
     os << endl;
   }
 };
 
-void execMov(DecodedInstruction *instr, MachineState *state) {
-
-  RegisterAccess access = access_patterns[instr->dest.val];
-  u32 index = access.index;
-  u16 source_val = 0;
+void getExecutionDetails(ExecutionDetails *exec, DecodedInstruction *instr, MachineState *state) {
+  exec->dest = access_patterns[instr->dest.val];
 
   if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Immediate) {
-    source_val = instr->source.immediate;
+    if (instr->w_bit) {
+      exec->source_val.bits16 = instr->source.immediate;
+    } else {
+      exec->source_val.bits8 = (u8)instr->source.immediate;
+    }
   } else if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Reg) {
-    RegisterAccess src_access = access_patterns[instr->source.val];
-    u32 src_index = src_access.index;
-    if (access.mode == AddressingMode_x) {
-      source_val = state->registers[src_index].x;
-    } else if (access.mode == AddressingMode_l) {
-      source_val = state->registers[src_index].byte.l;
-    } else if (access.mode == AddressingMode_h) {
-      source_val = state->registers[src_index].byte.h;
+    exec->source = access_patterns[instr->source.val];
+    if (exec->dest.mode == AddressingMode_x) {
+      exec->source_val.bits16 = state->registers[exec->source.index].x;
+    } else if (exec->dest.mode == AddressingMode_l) {
+      exec->source_val.bits8 = state->registers[exec->source.index].byte.l;
+    } else if (exec->dest.mode == AddressingMode_h) {
+      exec->hi = true;
+      exec->source_val.bits8 = state->registers[exec->source.index].byte.h;
     }
   }
+}
 
-  if (access.mode == AddressingMode_x) {
-    assert(instr->w_bit);
+void setPreviousRegisterState(MachineState *state, ExecutionDetails *exec, u8 w_bit) {
+  u32 index = exec->dest.index;
+  if (w_bit) {
     state->prev[index].x = state->registers[index].x;
-    state->registers[index].x = source_val;
-  } else if (access.mode == AddressingMode_l) {
-    state->prev[index].byte.l = state->registers[index].byte.l;
-    state->registers[index].byte.l = source_val;
-  } else if (access.mode == AddressingMode_h) {
+  } else if (exec->hi) {
     state->prev[index].byte.h = state->registers[index].byte.h;
-    state->registers[index].byte.h = source_val;
+  } else {
+    state->prev[index].byte.l = state->registers[index].byte.l;
   }
+}
+
+void setFlags(MachineState *state, ExecutionDetails *exec, u8 w_bit) {
+  bool is_zero = false;
+  bool is_signed = false;
+  if (w_bit) {
+    is_zero = exec->result.bits16 == 0;
+    is_signed = exec->result.bits16 & 0x8000;
+  } else {
+    is_zero = exec->result.bits8 == 0;
+    is_signed = exec->result.bits8 & 0x80;
+  }
+
+  if (is_zero) {
+    state->flags |= Flags_Zero;
+  } else {
+    state->flags &= ~Flags_Zero;
+  }
+  if (is_signed) {
+    state->flags |= Flags_Sign;
+  } else {
+    state->flags &= ~Flags_Sign;
+  }
+}
+
+void execMov(DecodedInstruction *instr, MachineState *state) {
+  ExecutionDetails exec = {};
+  getExecutionDetails(&exec, instr, state);
+  setPreviousRegisterState(state, &exec, instr->w_bit);
+  u32 index = exec.dest.index;
+
+  if (instr->w_bit) {
+    state->registers[index].x = exec.source_val.bits16;
+  } else if (exec.hi) {
+    state->registers[index].byte.h = exec.source_val.bits8;
+  } else {
+    state->registers[index].byte.l = exec.source_val.bits8;
+  }
+}
+
+void execAdd(DecodedInstruction *instr, MachineState *state) {
+  ExecutionDetails exec = {};
+  getExecutionDetails(&exec, instr, state);
+  setPreviousRegisterState(state, &exec, instr->w_bit);
+  u32 index = exec.dest.index;
+
+  if (instr->w_bit) {
+    state->registers[index].x += exec.source_val.bits16;
+    exec.result.bits16 = state->registers[index].x;
+  } else if (exec.hi) {
+    state->registers[index].byte.h += exec.source_val.bits8;
+    exec.result.bits8 = state->registers[index].byte.h;
+  } else {
+    state->registers[index].byte.l += exec.source_val.bits8;
+    exec.result.bits8 = state->registers[index].byte.l;
+  }
+
+  setFlags(state, &exec, instr->w_bit);
+}
+
+void execSub(DecodedInstruction *instr, MachineState *state) {
+  ExecutionDetails exec = {};
+  getExecutionDetails(&exec, instr, state);
+  setPreviousRegisterState(state, &exec, instr->w_bit);
+  u32 index = exec.dest.index;
+
+  if (instr->w_bit) {
+    state->registers[index].x -= exec.source_val.bits16;
+    exec.result.bits16 = state->registers[index].x;
+  } else if (exec.hi) {
+    state->registers[index].byte.h -= exec.source_val.bits8;
+    exec.result.bits8 = state->registers[index].byte.h;
+  } else {
+    state->registers[index].byte.l -= exec.source_val.bits8;
+    exec.result.bits8 = state->registers[index].byte.l;
+  }
+
+  setFlags(state, &exec, instr->w_bit);
+}
+
+void execCmp(DecodedInstruction *instr, MachineState *state) {
+  ExecutionDetails exec = {};
+  getExecutionDetails(&exec, instr, state);
+  setPreviousRegisterState(state, &exec, instr->w_bit);
+  u32 index = exec.dest.index;
+
+  if (instr->w_bit) {
+    exec.result.bits16 = state->registers[index].x - exec.source_val.bits16;
+  } else if (exec.hi) {
+    exec.result.bits8 = state->registers[index].byte.h - exec.source_val.bits8;
+  } else {
+    exec.result.bits8 = state->registers[index].byte.l - exec.source_val.bits8;
+  }
+
+  setFlags(state, &exec, instr->w_bit);
 }
 
 void execInstruction(DecodedInstruction *instr, MachineState *state) {
@@ -726,10 +863,13 @@ void execInstruction(DecodedInstruction *instr, MachineState *state) {
       execMov(instr, state);
       break;
     case Instructions_Add:
+      execAdd(instr, state);
       break;
     case Instructions_Sub:
+      execSub(instr, state);
       break;
     case Instructions_Cmp:
+      execCmp(instr, state);
       break;
     case Instructions_Jnz:
       break;
