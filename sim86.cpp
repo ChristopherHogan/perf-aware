@@ -500,56 +500,6 @@ struct DecodedInstruction {
     return num_bytes;
   }
 
-  string opToString(Operand *op, bool needs_immediate_size) {
-    string result;
-    if (op->type == OpType_Reg) {
-      result += registers[op->val];
-    } else if (op->type == OpType_Eac) {
-      if (mode == 0b00 && op->disp != 0) {
-        result += "[";
-        result += to_string(op->disp);
-      } else {
-        result += effective_address_calculations[op->val];
-      }
-      if ((s16)op->disp < 0) {
-        result += " - ";
-        result += to_string((s16)op->disp * -1);
-      } else {
-        result += " + ";
-        result += to_string(op->disp);
-      }
-      result += "]";
-    } else if (op->type == OpType_Immediate) {
-      if (needs_immediate_size) {
-        result += w_bit ? "word " : "byte ";
-      }
-
-      string imm;
-      if (op->relative) {
-        imm += "$";
-        // TODO(chogan): 16 bit relative offset
-        // if (w_bit) {
-        //   s16 signed_immediate = (s16)op->immediate;
-        // }
-        s8 signed_immediate = (s8)op->immediate;
-        if (signed_immediate < 0) {
-          imm += "-";
-          signed_immediate *= -1;
-        } else {
-          imm += "+";
-        }
-        imm += to_string(signed_immediate);
-      } else if (op->mem) {
-        imm += "[" + to_string(op->immediate) + "]";
-      } else {
-        imm += to_string(op->immediate);
-      }
-
-      result += imm;
-    }
-    return result;
-  }
-
   void immediateToRM(const u8 *data, size_t offset, int &num_bytes) {
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
@@ -664,16 +614,62 @@ struct DecodedInstruction {
     }
   }
 
+  string opToString(Operand *op, bool needs_immediate_size) {
+    string result;
+    if (op->type == OpType_Reg) {
+      result += registers[op->val];
+    } else if (op->type == OpType_Eac) {
+      if (mode == 0b00 && op->disp != 0) {
+        result += "[";
+        result += to_string(op->disp);
+      } else {
+        result += effective_address_calculations[op->val];
+      }
+      if ((s16)op->disp < 0) {
+        result += " - ";
+        result += to_string((s16)op->disp * -1);
+      } else {
+        result += " + ";
+        result += to_string(op->disp);
+      }
+      result += "]";
+    } else if (op->type == OpType_Immediate) {
+      if (needs_immediate_size) {
+        result += w_bit ? "word " : "byte ";
+      }
+
+      string imm;
+      if (op->relative) {
+        imm += "$";
+        // TODO(chogan): 16 bit relative offset
+        // if (w_bit) {
+        //   s16 signed_immediate = (s16)op->immediate;
+        // }
+        s8 signed_immediate = (s8)op->immediate;
+        if (signed_immediate < 0) {
+          imm += "-";
+          signed_immediate *= -1;
+        } else {
+          imm += "+";
+        }
+        imm += to_string(signed_immediate);
+      } else if (op->mem) {
+        imm += "[" + to_string(op->immediate) + "]";
+      } else {
+        imm += to_string(op->immediate);
+      }
+
+      result += imm;
+    }
+    return result;
+  }
+
   void emitInstruction(ofstream &os, MachineState *state) {
     string instr = instruction_strings[opcode];
     instr += " ";
     bool needs_immediate_size = dest.type == OpType_Eac || (dest.type == OpType_Immediate && dest.mem);
     string dst = opToString(&dest, false);
     string src = opToString(&source, needs_immediate_size);
-
-    if (!d_bit) {
-      std::swap(dst, src);
-    }
 
     instr += dst;
     if (!src.empty()) {
@@ -692,20 +688,35 @@ struct DecodedInstruction {
 };
 
 void execMov(DecodedInstruction *instr, MachineState *state) {
+
+  RegisterAccess access = access_patterns[instr->dest.val];
+  u32 index = access.index;
+  u16 source_val = 0;
+
   if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Immediate) {
-    RegisterAccess access = access_patterns[instr->dest.val];
-    u32 index = access.index;
+    source_val = instr->source.immediate;
+  } else if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Reg) {
+    RegisterAccess src_access = access_patterns[instr->source.val];
+    u32 src_index = src_access.index;
     if (access.mode == AddressingMode_x) {
-      assert(instr->w_bit);
-      state->prev[index].x = state->registers[index].x;
-      state->registers[index].x = instr->source.immediate;
+      source_val = state->registers[src_index].x;
     } else if (access.mode == AddressingMode_l) {
-      state->prev[index].byte.l = state->registers[index].byte.l;
-      state->registers[index].byte.l = (u8)instr->source.immediate;
+      source_val = state->registers[src_index].byte.l;
     } else if (access.mode == AddressingMode_h) {
-      state->prev[index].byte.h = state->registers[index].byte.h;
-      state->registers[index].byte.h = (u8)instr->source.immediate;
+      source_val = state->registers[src_index].byte.h;
     }
+  }
+
+  if (access.mode == AddressingMode_x) {
+    assert(instr->w_bit);
+    state->prev[index].x = state->registers[index].x;
+    state->registers[index].x = source_val;
+  } else if (access.mode == AddressingMode_l) {
+    state->prev[index].byte.l = state->registers[index].byte.l;
+    state->registers[index].byte.l = source_val;
+  } else if (access.mode == AddressingMode_h) {
+    state->prev[index].byte.h = state->registers[index].byte.h;
+    state->registers[index].byte.h = source_val;
   }
 }
 
@@ -834,6 +845,10 @@ void run(Arguments *args, MachineState *state) {
       default:
         assert(false);
         break;
+    }
+
+    if (!instr.d_bit) {
+      std::swap(instr.dest, instr.source);
     }
 
     if (args->exec) {
