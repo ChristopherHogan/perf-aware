@@ -28,7 +28,7 @@ typedef int8_t s8;
 typedef int16_t s16;
 
 const int kRegisterSize = 16;
-const int kNumRegisters = 8;
+const int kNumRegisters = 9;
 
 #define KILOBYTES(n) (n * 1024)
 #define MEGABYTES(n) (n * KILOBYTES(1) * KILOBYTES(1))
@@ -65,6 +65,7 @@ enum Registers {
   Registers_si,
   Registers_bh,
   Registers_di,
+  Registers_ip
 };
 
 enum Instructions {
@@ -111,22 +112,23 @@ enum CmpVariants {
 
 // NOTE(chogan): 3 bits for register, 1 bit for w (8 or 16 bit)
 unordered_map<u8, string> registers = {
-  {0b0000, "al"},
-  {0b0001, "ax"},
-  {0b0010, "cl"},
-  {0b0011, "cx"},
-  {0b0100, "dl"},
-  {0b0101, "dx"},
-  {0b0110, "bl"},
-  {0b0111, "bx"},
-  {0b1000, "ah"},
-  {0b1001, "sp"},
-  {0b1010, "ch"},
-  {0b1011, "bp"},
-  {0b1100, "dh"},
-  {0b1101, "si"},
-  {0b1110, "bh"},
-  {0b1111, "di"},
+  {Registers_al, "al"},
+  {Registers_ax, "ax"},
+  {Registers_cl, "cl"},
+  {Registers_cx, "cx"},
+  {Registers_dl, "dl"},
+  {Registers_dx, "dx"},
+  {Registers_bl, "bl"},
+  {Registers_bx, "bx"},
+  {Registers_ah, "ah"},
+  {Registers_sp, "sp"},
+  {Registers_ch, "ch"},
+  {Registers_bp, "bp"},
+  {Registers_dh, "dh"},
+  {Registers_si, "si"},
+  {Registers_bh, "bh"},
+  {Registers_di, "di"},
+  {Registers_ip, "ip"}
 };
 
 unordered_map<u8, string> effective_address_calculations = {
@@ -314,7 +316,8 @@ RegisterAccess access_patterns[] = {
   [Registers_dh] = {3, AddressingMode_h},
   [Registers_si] = {6, AddressingMode_x},
   [Registers_bh] = {1, AddressingMode_h},
-  [Registers_di] = {7, AddressingMode_x}
+  [Registers_di] = {7, AddressingMode_x},
+  [Registers_ip] = {8, AddressingMode_x}
 };
 
 union Register {
@@ -326,8 +329,8 @@ union Register {
 };
 
 struct MachineState {
-  Register prev[8];
-  Register registers[8];
+  Register prev[kNumRegisters];
+  Register registers[kNumRegisters];
   u8 prev_flags;
   u8 flags;
 };
@@ -707,6 +710,11 @@ struct DecodedInstruction {
       u16 current = state->registers[index].x;
       os << "  ; " << registers[dest.val] << ":0x" << std::hex << previous << "->0x" << current << std::dec;
 
+      u8 ip_index = access_patterns[Registers_ip].index;
+      u16 ip_prev = state->prev[ip_index].x;
+      u16 ip_cur = state->registers[ip_index].x;
+      os << " ip:0x" << std::hex << ip_prev << "->0x" << ip_cur << std::dec;
+
       if ((state->flags || state->prev_flags) &&
           (opcode == Instructions_Add || opcode == Instructions_Sub || opcode == Instructions_Cmp)) {
         os << " flags:";
@@ -987,6 +995,10 @@ void run(Arguments *args, MachineState *state) {
         break;
     }
 
+    u8 ip_index = access_patterns[Registers_ip].index;
+    state->prev[ip_index].x = state->registers[ip_index].x;
+    state->registers[ip_index].x += instruction_size;
+
     if (!instr.d_bit) {
       std::swap(instr.dest, instr.source);
     }
@@ -1003,12 +1015,22 @@ void run(Arguments *args, MachineState *state) {
 
   if (args->exec) {
     printf("Final registers:\n");
-    const char *reg_names[] = {"ax", "bx", "cx", "dx", "sp", "dp", "si", "di"};
+    const char *reg_names[] = {"ax", "bx", "cx", "dx", "sp", "dp", "si", "di", "ip"};
     for (int i = 0; i < kNumRegisters; ++i) {
       const char *reg = reg_names[i];
       u16 hex = state->registers[i].x;
-      printf("\t%s: 0x%04x (%d)\n", reg, hex, hex);
+      if (hex) {
+        printf("\t\t%s: 0x%04x (%d)\n", reg, hex, hex);
+      }
     }
+    printf("\tflags: ");
+    if (state->flags & Flags_Zero) {
+      printf("Z");
+    }
+    if (state->flags & Flags_Sign) {
+      printf("S");
+    }
+    printf("\n");
   }
 
 }

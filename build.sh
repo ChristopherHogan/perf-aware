@@ -11,6 +11,8 @@ decode_files=(
     "listing_0043_immediate_movs"
     "listing_0044_register_movs"
     "listing_0046_add_sub_cmp"
+    "listing_0048_ip_register"
+    "listing_0049_conditional_jumps"
 )
 
 release_flags="-O3 -g"
@@ -40,8 +42,8 @@ if [[ ! -z "${TEST}" ]]; then
         diff ${f} ${decoded_name}
     done
 fi
-
 echo ""
+
 if [[ ! -z "${EXEC}" ]]; then
     ./${test_name}
 fi
