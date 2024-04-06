@@ -31,9 +31,9 @@ const int kRegisterSize = 16;
 const int kNumRegisters = 9;
 
 #define KILOBYTES(n) (n * 1024)
-#define MEGABYTES(n) (n * KILOBYTES(1) * KILOBYTES(1))
 
 enum Flags : u8 {
+  Flags_None = 0,
   Flags_Carry = (1 << 0),
   Flags_Parity = (1 << 1),
   Flags_AuxiliaryCarry = (1 << 2),
@@ -283,7 +283,7 @@ struct Arguments {
 
 struct Memory {
   u32 used;
-  u8 bytes[MEGABYTES(1)];
+  u8 bytes[KILOBYTES(64)];
 };
 
 struct Operand {
@@ -298,6 +298,19 @@ struct Operand {
 struct RegisterAccess {
   u32 index;
   AddressingMode mode;
+};
+
+struct MemoryAccess {
+  u32 index;
+  bool one_byte;
+};
+
+struct RmAccess {
+  OpType type;
+  union {
+    RegisterAccess reg;
+    MemoryAccess mem;
+  } access;
 };
 
 RegisterAccess access_patterns[] = {
@@ -329,6 +342,7 @@ union Register {
 };
 
 struct MachineState {
+  Memory mem;
   Register prev[kNumRegisters];
   Register registers[kNumRegisters];
   u8 prev_flags;
@@ -341,8 +355,8 @@ union ByteOrNibble{
 };
 
 struct ExecutionDetails {
-  RegisterAccess dest;
-  RegisterAccess source;
+  RmAccess dest;
+  RmAccess source;
   ByteOrNibble source_val;
   ByteOrNibble result;
   bool hi;
@@ -740,30 +754,108 @@ struct DecodedInstruction {
   }
 };
 
-void getExecutionDetails(ExecutionDetails *exec, DecodedInstruction *instr, MachineState *state) {
-  exec->dest = access_patterns[instr->dest.val];
+u32 calculateEffectiveAddress(MachineState *state, u8 rm, u16 disp) {
+  u32 result = 0;
 
-  if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Immediate) {
-    if (instr->w_bit) {
-      exec->source_val.bits16 = instr->source.immediate;
+  switch (rm) {
+    case 0b000: {
+      u16 bx = state->registers[access_patterns[Registers_bx].index].x;
+      u16 si = state->registers[access_patterns[Registers_si].index].x;
+      result = bx + si;
+      break;
+    }
+    case 0b001: {
+      u16 bx = state->registers[access_patterns[Registers_bx].index].x;
+      u16 di = state->registers[access_patterns[Registers_di].index].x;
+      result = bx + di;
+      break;
+    }
+    case 0b010: {
+      u16 bp = state->registers[access_patterns[Registers_bp].index].x;
+      u16 si = state->registers[access_patterns[Registers_si].index].x;
+      result = bp + si;
+      break;
+    }
+    case 0b011: {
+      u16 bp = state->registers[access_patterns[Registers_bp].index].x;
+      u16 di = state->registers[access_patterns[Registers_di].index].x;
+      result = bp + di;
+      break;
+    }
+    case 0b100: {
+      u16 si = state->registers[access_patterns[Registers_si].index].x;
+      result = si;
+      break;
+    }
+    case 0b101: {
+      u16 di = state->registers[access_patterns[Registers_di].index].x;
+      result = di;
+      break;
+    }
+    case 0b110: {
+      u16 bp = state->registers[access_patterns[Registers_bp].index].x;
+      result = bp;
+      break;
+    }
+    case 0b111: {
+      u16 bx = state->registers[access_patterns[Registers_bx].index].x;
+      result = bx;
+      break;
+    }
+    default:
+      break;
+  }
+
+  result += disp;
+
+  return result;
+}
+
+void getExecutionDetails(ExecutionDetails *exec, DecodedInstruction *instr, MachineState *state) {
+  exec->dest.type = instr->dest.type;
+  exec->source.type = instr->source.type;
+
+  if (instr->dest.type == OpType_Reg) {
+    exec->dest.access.reg = access_patterns[instr->dest.val];
+  } else if (instr->dest.type == OpType_Eac) {
+    // NOTE(chogan): Assume all stores are 16 bit for now
+    exec->dest.access.mem.index = calculateEffectiveAddress(state, instr->dest.val, instr->dest.disp);
+  } else if (instr->dest.type == OpType_Immediate && instr->dest.mem) {
+    exec->dest.access.mem.index = instr->dest.immediate;
+  }
+
+  if (instr->source.type == OpType_Immediate) {
+    if (instr->source.mem) {
+      u8 low_bits = state->mem.bytes[instr->source.immediate];
+      u8 hi_bits = state->mem.bytes[instr->source.immediate + 1];
+      exec->source_val.bits16 = (hi_bits << 8) | low_bits;
     } else {
-      exec->source_val.bits8 = (u8)instr->source.immediate;
+      if (instr->w_bit) {
+        exec->source_val.bits16 = instr->source.immediate;
+      } else {
+        exec->source_val.bits8 = (u8)instr->source.immediate;
+      }
     }
-  } else if (instr->dest.type == OpType_Reg && instr->source.type == OpType_Reg) {
-    exec->source = access_patterns[instr->source.val];
-    if (exec->dest.mode == AddressingMode_x) {
-      exec->source_val.bits16 = state->registers[exec->source.index].x;
-    } else if (exec->dest.mode == AddressingMode_l) {
-      exec->source_val.bits8 = state->registers[exec->source.index].byte.l;
-    } else if (exec->dest.mode == AddressingMode_h) {
+  } else if (instr->source.type == OpType_Reg) {
+    exec->source.access.reg = access_patterns[instr->source.val];
+    if (exec->dest.access.reg.mode == AddressingMode_x) {
+      exec->source_val.bits16 = state->registers[exec->source.access.reg.index].x;
+    } else if (exec->dest.access.reg.mode == AddressingMode_l) {
+      exec->source_val.bits8 = state->registers[exec->source.access.reg.index].byte.l;
+    } else if (exec->dest.access.reg.mode == AddressingMode_h) {
       exec->hi = true;
-      exec->source_val.bits8 = state->registers[exec->source.index].byte.h;
+      exec->source_val.bits8 = state->registers[exec->source.access.reg.index].byte.h;
     }
+  } else if (instr->source.type == OpType_Eac) {
+    exec->source.access.mem.index = calculateEffectiveAddress(state, instr->source.val, instr->source.disp);
+    u8 low_bits = state->mem.bytes[exec->source.access.mem.index];
+    u8 hi_bits = state->mem.bytes[exec->source.access.mem.index + 1];
+    exec->source_val.bits16 = (hi_bits << 8) | low_bits;
   }
 }
 
 void setPreviousRegisterState(MachineState *state, ExecutionDetails *exec, u8 w_bit) {
-  u32 index = exec->dest.index;
+  u32 index = exec->dest.access.reg.index;
   if (w_bit) {
     state->prev[index].x = state->registers[index].x;
   } else if (exec->hi) {
@@ -799,15 +891,22 @@ void setFlags(MachineState *state, ExecutionDetails *exec, u8 w_bit) {
 void execMov(DecodedInstruction *instr, MachineState *state) {
   ExecutionDetails exec = {};
   getExecutionDetails(&exec, instr, state);
-  setPreviousRegisterState(state, &exec, instr->w_bit);
-  u32 index = exec.dest.index;
 
-  if (instr->w_bit) {
-    state->registers[index].x = exec.source_val.bits16;
-  } else if (exec.hi) {
-    state->registers[index].byte.h = exec.source_val.bits8;
-  } else {
-    state->registers[index].byte.l = exec.source_val.bits8;
+  if (exec.dest.type == OpType_Reg) {
+    setPreviousRegisterState(state, &exec, instr->w_bit);
+    u32 index = exec.dest.access.reg.index;
+
+    if (instr->w_bit) {
+      state->registers[index].x = exec.source_val.bits16;
+    } else if (exec.hi) {
+      state->registers[index].byte.h = exec.source_val.bits8;
+    } else {
+      state->registers[index].byte.l = exec.source_val.bits8;
+    }
+  } else if (exec.dest.type == OpType_Eac || exec.dest.type == OpType_Immediate) {
+    u16 val = exec.source_val.bits16;
+    state->mem.bytes[exec.dest.access.mem.index] = (u8)(val & 0x00FF);
+    state->mem.bytes[exec.dest.access.mem.index + 1] = (u8)(val >> 8);
   }
 }
 
@@ -815,7 +914,7 @@ void execAdd(DecodedInstruction *instr, MachineState *state) {
   ExecutionDetails exec = {};
   getExecutionDetails(&exec, instr, state);
   setPreviousRegisterState(state, &exec, instr->w_bit);
-  u32 index = exec.dest.index;
+  u32 index = exec.dest.access.reg.index;
 
   if (instr->w_bit) {
     state->registers[index].x += exec.source_val.bits16;
@@ -835,7 +934,7 @@ void execSub(DecodedInstruction *instr, MachineState *state) {
   ExecutionDetails exec = {};
   getExecutionDetails(&exec, instr, state);
   setPreviousRegisterState(state, &exec, instr->w_bit);
-  u32 index = exec.dest.index;
+  u32 index = exec.dest.access.reg.index;
 
   if (instr->w_bit) {
     state->registers[index].x -= exec.source_val.bits16;
@@ -855,7 +954,7 @@ void execCmp(DecodedInstruction *instr, MachineState *state) {
   ExecutionDetails exec = {};
   getExecutionDetails(&exec, instr, state);
   setPreviousRegisterState(state, &exec, instr->w_bit);
-  u32 index = exec.dest.index;
+  u32 index = exec.dest.access.reg.index;
 
   if (instr->w_bit) {
     exec.result.bits16 = state->registers[index].x - exec.source_val.bits16;
@@ -962,49 +1061,48 @@ string getOutputFilename(char *fname) {
 }
 
 void run(Arguments *args, MachineState *state) {
-  Memory memory = {};
-  readEntireFile(&memory, args->fname);
+  readEntireFile(&state->mem, args->fname);
 
   string output_fname = getOutputFilename(args->fname);
   ofstream output_file(output_fname);
   output_file << "bits " << to_string(kRegisterSize) << endl;
 
   u16 *ip = &state->registers[access_patterns[Registers_ip].index].x;
-  size_t sz = memory.used;
+  size_t sz = state->mem.used;
   while (*ip < sz) {
     int instruction_size = 0;
     DecodedInstruction instr = {};
     size_t i = *ip;
 
-    switch (opcodes[memory.bytes[i]]) {
+    switch (opcodes[state->mem.bytes[i]]) {
       case Instructions_Mov: {
-        instruction_size += instr.decodeMov(memory.bytes, i);
+        instruction_size += instr.decodeMov(state->mem.bytes, i);
         break;
       }
       case Instructions_Add: {
-          instruction_size += instr.decodeAdd(memory.bytes, i);
+          instruction_size += instr.decodeAdd(state->mem.bytes, i);
         break;
       }
       case Instructions_Sub: {
-          instruction_size += instr.decodeSub(memory.bytes, i);
+          instruction_size += instr.decodeSub(state->mem.bytes, i);
         break;
       }
       case Instructions_Cmp: {
-        instruction_size += instr.decodeCmp(memory.bytes, i);
+        instruction_size += instr.decodeCmp(state->mem.bytes, i);
         break;
       }
       case Instructions_Jnz: {
-        instruction_size += instr.decodeJnz(memory.bytes, i);
+        instruction_size += instr.decodeJnz(state->mem.bytes, i);
         break;
       }
       case Instructions_AddSubCmp: {
-        Instructions inst = dispatchAddSubCmp(memory.bytes, i);
+        Instructions inst = dispatchAddSubCmp(state->mem.bytes, i);
         if (inst == Instructions_Add) {
-          instruction_size += instr.decodeAdd(memory.bytes, i);
+          instruction_size += instr.decodeAdd(state->mem.bytes, i);
         } else if (inst == Instructions_Sub) {
-          instruction_size += instr.decodeSub(memory.bytes, i);
+          instruction_size += instr.decodeSub(state->mem.bytes, i);
         } else if (inst == Instructions_Cmp) {
-          instruction_size += instr.decodeCmp(memory.bytes, i);
+          instruction_size += instr.decodeCmp(state->mem.bytes, i);
         } else {
           // TODO(chogan): ERROR
         }
@@ -1033,7 +1131,7 @@ void run(Arguments *args, MachineState *state) {
 
   if (args->exec) {
     printf("Final registers:\n");
-    const char *reg_names[] = {"ax", "bx", "cx", "dx", "sp", "dp", "si", "di", "ip"};
+    const char *reg_names[] = {"ax", "bx", "cx", "dx", "sp", "bp", "si", "di", "ip"};
     for (int i = 0; i < kNumRegisters; ++i) {
       const char *reg = reg_names[i];
       u16 hex = state->registers[i].x;

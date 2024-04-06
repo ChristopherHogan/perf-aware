@@ -11,14 +11,18 @@ int main() {
     "listing_0044_register_movs",
     "listing_0046_add_sub_cmp",
     "listing_0048_ip_register",
-    "listing_0049_conditional_jumps"
+    "listing_0049_conditional_jumps",
+    "listing_0051_memory_mov",
+    "listing_0052_memory_add_loop"
   };
 
   const u8 kExpectedFlags[] = {
-    0,
-    0,
+    Flags_None,
+    Flags_None,
     Flags_Zero,
     Flags_Sign,
+    Flags_Zero,
+    Flags_None,
     Flags_Zero
   };
 
@@ -27,7 +31,9 @@ int main() {
     {{.x = 4}, {.x = 3}, {.x = 2}, {.x = 1}, {.x = 1}, {.x = 2}, {.x = 3}, {.x = 4}, {.x = 0}},
     {{.x = 0}, {.x = 57602}, {.x = 3841}, {.x = 0}, {.x = 998}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}},
     {{.x = 0}, {.x = 2000}, {.x = 64736}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 14}},
-    {{.x = 0}, {.x = 1030}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 14}}
+    {{.x = 0}, {.x = 1030}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 0}, {.x = 14}},
+    {{.x = 0}, {.x = 1}, {.x = 2}, {.x = 10}, {.x = 0}, {.x = 4}, {.x = 0}, {.x = 0}, {.x = 48}},
+    {{.x = 0}, {.x = 6}, {.x = 4}, {.x = 6}, {.x = 0}, {.x = 1000}, {.x = 6}, {.x = 0}, {.x = 35}}
   };
 
   for (size_t i = 0; i < arraySize(kFiles); ++i) {
