@@ -705,10 +705,13 @@ struct DecodedInstruction {
     }
     os << instr;
     if (state) {
-      int index = access_patterns[dest.val].index;
-      u16 previous = state->prev[index].x;
-      u16 current = state->registers[index].x;
-      os << "  ; " << registers[dest.val] << ":0x" << std::hex << previous << "->0x" << current << std::dec;
+      os << " ; ";
+      if (dest.type == OpType_Reg) {
+        int index = access_patterns[dest.val].index;
+        u16 previous = state->prev[index].x;
+        u16 current = state->registers[index].x;
+        os << registers[dest.val] << ":0x" << std::hex << previous << "->0x" << current << std::dec;
+      }
 
       u8 ip_index = access_patterns[Registers_ip].index;
       u16 ip_prev = state->prev[ip_index].x;
@@ -865,6 +868,21 @@ void execCmp(DecodedInstruction *instr, MachineState *state) {
   setFlags(state, &exec, instr->w_bit);
 }
 
+void execJnz(DecodedInstruction *instr, MachineState *state) {
+  if (!(state->flags & Flags_Zero)) {
+    u8 ip_index = access_patterns[Registers_ip].index;
+    state->prev[ip_index].x = state->registers[ip_index].x;
+    u16 val = instr->dest.immediate;
+    // NOTE(chogan): Subtract 2 to counteract the +2 that nasm adds
+    s8 offset = (s8)(val & 0xFF) - 2;
+    if (offset < 0) {
+      state->registers[ip_index].x -= (offset * -1);
+    } else {
+      state->registers[ip_index].x += offset;
+    }
+  }
+}
+
 void execInstruction(DecodedInstruction *instr, MachineState *state) {
   switch (instr->opcode) {
     case Instructions_Mov:
@@ -880,6 +898,7 @@ void execInstruction(DecodedInstruction *instr, MachineState *state) {
       execCmp(instr, state);
       break;
     case Instructions_Jnz:
+      execJnz(instr, state);
       break;
     default:
       break;
@@ -950,11 +969,12 @@ void run(Arguments *args, MachineState *state) {
   ofstream output_file(output_fname);
   output_file << "bits " << to_string(kRegisterSize) << endl;
 
-  size_t i = 0;
+  u16 *ip = &state->registers[access_patterns[Registers_ip].index].x;
   size_t sz = memory.used;
-  while (i < sz) {
+  while (*ip < sz) {
     int instruction_size = 0;
     DecodedInstruction instr = {};
+    size_t i = *ip;
 
     switch (opcodes[memory.bytes[i]]) {
       case Instructions_Mov: {
@@ -996,8 +1016,8 @@ void run(Arguments *args, MachineState *state) {
     }
 
     u8 ip_index = access_patterns[Registers_ip].index;
-    state->prev[ip_index].x = state->registers[ip_index].x;
-    state->registers[ip_index].x += instruction_size;
+    state->prev[ip_index].x = *ip;
+    *ip += instruction_size;
 
     if (!instr.d_bit) {
       std::swap(instr.dest, instr.source);
@@ -1009,8 +1029,6 @@ void run(Arguments *args, MachineState *state) {
     } else {
       instr.emitInstruction(output_file, NULL);
     }
-
-    i += instruction_size;
   }
 
   if (args->exec) {
