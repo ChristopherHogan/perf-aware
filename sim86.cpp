@@ -110,39 +110,72 @@ enum CmpVariants {
   CmpVariants_ImmediateToAccumulator
 };
 
+enum EaComponents {
+  EaComponents_DispOnly,
+  EaComponents_BaseOrIndexOnly,
+  EaComponents_DispBaseOrIndex,
+  EaComponents_BaseOrIndex1,
+  EaComponents_BaseOrIndex2,
+  EaComponents_DispBaseIndex1,
+  EaComponents_DispBaseIndex2,
+  EaComponents_Count
+};
+
+enum OperandCombos {
+  OperandCombos_RegReg,
+  OperandCombos_RegMem,
+  OperandCombos_MemReg,
+  OperandCombos_RegImm,
+  OperandCombos_MemImm,
+  OperandCombos_AccImm,
+  OperandCombos_MemAcc,
+  OperandCombos_AccMem,
+  OperandCombos_Count
+};
+
+const u8 effective_address_calculation_clocks[EaComponents_Count] = {
+  [EaComponents_DispOnly] = 6,
+  [EaComponents_BaseOrIndexOnly] = 5,
+  [EaComponents_DispBaseOrIndex] = 9,
+  [EaComponents_BaseOrIndex1] = 7,
+  [EaComponents_BaseOrIndex2] = 8,
+  [EaComponents_DispBaseIndex1] = 11,
+  [EaComponents_DispBaseIndex2] = 12
+};
+
 // NOTE(chogan): 3 bits for register, 1 bit for w (8 or 16 bit)
-unordered_map<u8, string> registers = {
-  {Registers_al, "al"},
-  {Registers_ax, "ax"},
-  {Registers_cl, "cl"},
-  {Registers_cx, "cx"},
-  {Registers_dl, "dl"},
-  {Registers_dx, "dx"},
-  {Registers_bl, "bl"},
-  {Registers_bx, "bx"},
-  {Registers_ah, "ah"},
-  {Registers_sp, "sp"},
-  {Registers_ch, "ch"},
-  {Registers_bp, "bp"},
-  {Registers_dh, "dh"},
-  {Registers_si, "si"},
-  {Registers_bh, "bh"},
-  {Registers_di, "di"},
-  {Registers_ip, "ip"}
+const char *registers[] = {
+  [Registers_al] = "al",
+  [Registers_ax] = "ax",
+  [Registers_cl] = "cl",
+  [Registers_cx] = "cx",
+  [Registers_dl] = "dl",
+  [Registers_dx] = "dx",
+  [Registers_bl] = "bl",
+  [Registers_bx] = "bx",
+  [Registers_ah] = "ah",
+  [Registers_sp] = "sp",
+  [Registers_ch] = "ch",
+  [Registers_bp] = "bp",
+  [Registers_dh] = "dh",
+  [Registers_si] = "si",
+  [Registers_bh] = "bh",
+  [Registers_di] = "di",
+  [Registers_ip] = "ip"
 };
 
-unordered_map<u8, string> effective_address_calculations = {
-  {0b000, "[bx + si"},
-  {0b001, "[bx + di"},
-  {0b010, "[bp + si"},
-  {0b011, "[bp + di"},
-  {0b100, "[si"},
-  {0b101, "[di"},
-  {0b110, "[bp"},
-  {0b111, "[bx"},
+const char *effective_address_calculations[] = {
+  [0b000] = "[bx + si",
+  [0b001] = "[bx + di",
+  [0b010] = "[bp + si",
+  [0b011] = "[bp + di",
+  [0b100] = "[si",
+  [0b101] = "[di",
+  [0b110] = "[bp",
+  [0b111] = "[bx",
 };
 
-string instruction_strings[] = {
+const char *instruction_strings[] = {
   "",
   "mov",
   "add",
@@ -280,6 +313,8 @@ struct Arguments {
   char *fname;
   bool exec;
   bool dump;
+  bool clocks;
+  bool explain_clocks;
 };
 
 struct Memory {
@@ -314,6 +349,79 @@ struct RmAccess {
   } access;
 };
 
+union Register {
+  struct {
+    u8 l;
+    u8 h;
+  } byte;
+  u16 x;
+};
+
+struct MachineState {
+  Memory mem;
+  Register prev[kNumRegisters];
+  Register registers[kNumRegisters];
+  u32 total_clocks;
+  u8 prev_flags;
+  u8 flags;
+};
+
+union ByteOrNibble{
+  u8 bits8;
+  u16 bits16;
+};
+
+struct ExecutionDetails {
+  RmAccess dest;
+  RmAccess source;
+  ByteOrNibble source_val;
+  ByteOrNibble result;
+  bool hi;
+};
+
+struct InstructionClockData {
+  u8 clocks;
+  u8 transfers;
+  bool eac;
+};
+
+struct InstructionData {
+  OperandCombos ops;
+  u8 clocks;
+  u8 transfers;
+  u8 eac_clocks;
+  u8 total_clocks;
+};
+
+InstructionClockData addsub_instruction_data[] {
+  [OperandCombos_RegReg] = {.clocks = 3, .transfers = 0, .eac = false},
+  [OperandCombos_RegMem] = {.clocks = 9, .transfers = 1, .eac = true},
+  [OperandCombos_MemReg] = {.clocks = 16, .transfers = 2, .eac = true},
+  [OperandCombos_RegImm] = {.clocks = 4, .transfers = 0, .eac = false},
+  [OperandCombos_MemImm] = {.clocks = 17, .transfers = 2, .eac = true},
+  [OperandCombos_AccImm] = {.clocks = 4, .transfers = 0, .eac = false}
+};
+
+InstructionClockData cmp_instruction_data[] {
+  [OperandCombos_RegReg] = {.clocks = 3, .transfers = 0, .eac = false},
+  [OperandCombos_RegMem] = {.clocks = 9, .transfers = 1, .eac = true},
+  [OperandCombos_MemReg] = {.clocks = 9, .transfers = 1, .eac = true},
+  [OperandCombos_RegImm] = {.clocks = 4, .transfers = 0, .eac = false},
+  [OperandCombos_MemImm] = {.clocks = 10, .transfers = 1, .eac = true},
+  [OperandCombos_AccImm] = {.clocks = 4, .transfers = 0, .eac = false}
+};
+
+InstructionClockData mov_instruction_data[] {
+  [OperandCombos_RegReg] = {.clocks = 2, .transfers = 0, .eac = false},
+  [OperandCombos_RegMem] = {.clocks = 8, .transfers = 1, .eac = true},
+  [OperandCombos_MemReg] = {.clocks = 9, .transfers = 1, .eac = true},
+  [OperandCombos_RegImm] = {.clocks = 4, .transfers = 0, .eac = false},
+  [OperandCombos_MemImm] = {.clocks = 10, .transfers = 1, .eac = true},
+  [OperandCombos_AccImm] = {},
+  [OperandCombos_MemAcc] = {.clocks = 10, .transfers = 1, .eac = false},
+  [OperandCombos_AccMem] = {.clocks = 10, .transfers = 1, .eac = false}
+};
+
 RegisterAccess access_patterns[] = {
   [Registers_al] = {0, AddressingMode_l},
   [Registers_ax] = {0, AddressingMode_x},
@@ -334,38 +442,20 @@ RegisterAccess access_patterns[] = {
   [Registers_ip] = {8, AddressingMode_x}
 };
 
-union Register {
-  struct {
-    u8 l;
-    u8 h;
-  } byte;
-  u16 x;
-};
+bool isAccumulator(Operand *op) {
+  bool result = false;
 
-struct MachineState {
-  Memory mem;
-  Register prev[kNumRegisters];
-  Register registers[kNumRegisters];
-  u8 prev_flags;
-  u8 flags;
-};
+  if (op->type == OpType_Reg) {
+    result = registers[op->val][0] == 'a';
+  }
 
-union ByteOrNibble{
-  u8 bits8;
-  u16 bits16;
-};
-
-struct ExecutionDetails {
-  RmAccess dest;
-  RmAccess source;
-  ByteOrNibble source_val;
-  ByteOrNibble result;
-  bool hi;
-};
+  return result;
+}
 
 struct DecodedInstruction {
   Operand dest;
   Operand source;
+  InstructionData data;
   Instructions opcode;
   u8 d_bit;
   u8 s_bit;
@@ -694,7 +784,116 @@ struct DecodedInstruction {
     return result;
   }
 
-  void emitInstruction(ofstream &os, MachineState *state) {
+  EaComponents getEaComponents() {
+    EaComponents result;
+    Operand op;
+    if (dest.type == OpType_Eac || dest.mem) {
+      op = dest;
+    } else if (source.type == OpType_Eac || source.mem) {
+      op = source;
+    } else {
+      assert(false);
+    }
+
+    bool has_disp = op.disp != 0;
+
+    if (op.mem) {
+      result = EaComponents_DispOnly;
+    } else {
+      switch (op.val) {
+        case 0b000:  // "bx + si"
+        case 0b011:  // "bp + di"
+          if (has_disp) {
+            result = EaComponents_DispBaseIndex1;
+          } else {
+            result = EaComponents_BaseOrIndex1;
+          }
+          break;
+        case 0b001:  // "bx + di"
+        case 0b010:  // "bp + si"
+          if (has_disp) {
+            result = EaComponents_DispBaseIndex2;
+          } else {
+            result = EaComponents_BaseOrIndex2;
+          }
+          break;
+        case 0b100:  // "si"
+        case 0b101:  // "di"
+        case 0b110:  // "bp"
+        case 0b111:  // "bx"
+          if (has_disp) {
+            result = EaComponents_DispBaseOrIndex;
+          } else {
+            result = EaComponents_BaseOrIndexOnly;
+          }
+          break;
+        default:
+          assert(false);
+          break;
+      }
+    }
+
+    return result;
+  }
+
+  void getInstructionClockData(InstructionClockData *icdata) {
+    if (icdata[data.ops].eac) {
+      EaComponents ea = getEaComponents();
+      data.eac_clocks = effective_address_calculation_clocks[ea];
+    }
+    data.clocks = icdata[data.ops].clocks;
+    data.transfers = icdata[data.ops].transfers;
+    data.total_clocks = data.clocks + data.eac_clocks;
+  }
+
+  void getInstructionData() {
+    if (dest.type == OpType_Reg) {
+      if (source.type == OpType_Reg) {
+        data.ops = OperandCombos_RegReg;
+      } else if (source.type == OpType_Eac) {
+        if (isAccumulator(&dest) && opcode == Instructions_Mov) {
+          data.ops = OperandCombos_AccMem;
+        } else {
+          data.ops = OperandCombos_RegMem;
+        }
+      } else if (source.type == OpType_Immediate) {
+        if (isAccumulator(&dest) && opcode == Instructions_Add) {
+          data.ops = OperandCombos_AccImm;
+        } else if (source.mem){
+          data.ops = OperandCombos_RegMem;
+        } else {
+          data.ops = OperandCombos_RegImm;
+        }
+      }
+    } else if (dest.type == OpType_Eac) {
+      if (source.type == OpType_Reg) {
+        if (isAccumulator(&source) && opcode == Instructions_Mov) {
+          data.ops = OperandCombos_MemAcc;
+        } else {
+          data.ops = OperandCombos_MemReg;
+        }
+      } else if (source.type == OpType_Immediate) {
+        data.ops = OperandCombos_MemImm;
+      }
+    } else if (dest.type == OpType_Immediate) {
+      assert(dest.mem);
+      if (source.type == OpType_Reg) {
+        data.ops = OperandCombos_MemReg;
+      } else {
+        data.ops = OperandCombos_MemImm;
+      }
+    }
+
+    if (opcode == Instructions_Add || opcode == Instructions_Sub) {
+      getInstructionClockData(addsub_instruction_data);
+    } else if (opcode == Instructions_Mov) {
+      getInstructionClockData(mov_instruction_data);
+    } else if (opcode == Instructions_Cmp) {
+      getInstructionClockData(cmp_instruction_data);
+    }
+  }
+
+  void emitInstruction(ofstream &os, MachineState *state, Arguments *args) {
     string instr = instruction_strings[opcode];
     instr += " ";
     bool needs_immediate_size = dest.type == OpType_Eac || (dest.type == OpType_Immediate && dest.mem);
@@ -706,9 +905,24 @@ struct DecodedInstruction {
       instr += ", ";
       instr += src;
     }
+
     os << instr;
-    if (state) {
+
+    if (args->clocks || args->explain_clocks) {
       os << " ; ";
+      os << "clocks: +" << (u32)data.total_clocks << " = " << state->total_clocks;
+      if (args->explain_clocks && data.eac_clocks) {
+        os << " (" << (u32)data.clocks << " + " << (u32)data.eac_clocks << "ea)";
+      }
+    }
+
+    if (args->exec) {
+      if (args->clocks || args->explain_clocks) {
+        os << " | ";
+      } else {
+        os << " ; ";
+      }
+
       if (dest.type == OpType_Reg) {
         int index = access_patterns[dest.val].index;
         u16 previous = state->prev[index].x;
@@ -1109,12 +1323,15 @@ void run(Arguments *args, MachineState *state) {
       std::swap(instr.dest, instr.source);
     }
 
+    if (args->clocks || args->explain_clocks) {
+      instr.getInstructionData();
+      state->total_clocks += instr.data.total_clocks;
+    }
+
     if (args->exec) {
       execInstruction(&instr, state);
-      instr.emitInstruction(output_file, state);
-    } else {
-      instr.emitInstruction(output_file, NULL);
     }
+    instr.emitInstruction(output_file, state, args);
   }
 
   if (args->exec) {
@@ -1148,8 +1365,14 @@ Arguments parseArgs(int argc, char **argv) {
 
   if (argc == 2) {
     result.fname = argv[1];
-  } else if (argc == 3 && strcmp(argv[1], "-exec") == 0){
-    result.exec = true;
+  } else if (argc == 3) {
+    if (strcmp(argv[1], "-exec") == 0) {
+      result.exec = true;
+    } else if (strcmp(argv[1], "-clocks") == 0) {
+      result.clocks = true;
+    } else if (strcmp(argv[1], "-explainclocks") == 0) {
+      result.explain_clocks = true;
+    }
     result.fname = argv[2];
   } else if (argc == 4 && strcmp(argv[1], "-exec") == 0 &&
              strcmp(argv[2], "-dump") == 0) {

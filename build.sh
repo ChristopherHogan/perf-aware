@@ -16,6 +16,7 @@ decode_files=(
     "listing_0051_memory_mov"
     "listing_0052_memory_add_loop"
     "listing_0054_draw_rectangle"
+    "listing_0056_estimating_cycles"
 )
 
 release_flags="-O3 -g"
