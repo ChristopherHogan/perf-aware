@@ -279,6 +279,7 @@ unordered_map<u8, MovVariants> mov_variants = {
 struct Arguments {
   char *fname;
   bool exec;
+  bool dump;
 };
 
 struct Memory {
@@ -1147,8 +1148,12 @@ void run(Arguments *args, MachineState *state) {
       printf("S");
     }
     printf("\n");
-  }
 
+    if (args->dump) {
+      ofstream mem_file("sim86_memory_0.data", std::ios::binary);
+      mem_file.write((char *)state->mem.bytes, state->mem.used + 64 * 64 * 4);
+    }
+  }
 }
 
 Arguments parseArgs(int argc, char **argv) {
@@ -1159,6 +1164,11 @@ Arguments parseArgs(int argc, char **argv) {
   } else if (argc == 3 && strcmp(argv[1], "-exec") == 0){
     result.exec = true;
     result.fname = argv[2];
+  } else if (argc == 4 && strcmp(argv[1], "-exec") == 0 &&
+             strcmp(argv[2], "-dump") == 0) {
+    result.exec = true;
+    result.dump = true;
+    result.fname = argv[3];
   } else {
     fprintf(stderr, "USAGE: %s [-exec] <8086_asm_filename>\n", argv[0]);
     exit(1);
