@@ -375,20 +375,21 @@ struct DecodedInstruction {
   u8 rm;
   u8 disp_lo;
   u8 disp_hi;
+  u8 size;
 
-  int decodeMov(const u8 *data, size_t offset) {
-    int num_bytes = 2;
+  void decodeMov(const u8 *data, size_t offset) {
+    size = 2;
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
     opcode = opcodes[b1];
 
     switch (mov_variants[b1]) {
       case MovVariants_RMtoFromR: {
-        rmToFromR(data, offset, num_bytes);
+        rmToFromR(data, offset);
         break;
       }
       case MovVariants_ImmediateToRM: {
-        immediateToRM(data, offset, num_bytes);
+        immediateToRM(data, offset);
         break;
       }
       case MovVariants_ImmediateToR: {
@@ -398,7 +399,7 @@ struct DecodedInstruction {
         u16 immediate = b2;
         if (w_bit) {
           immediate |= (data[offset + 2] << 8);
-          num_bytes++;
+          size++;
         }
         dest.type = OpType_Reg;
         dest.val = (reg << 1) | w_bit;
@@ -412,7 +413,7 @@ struct DecodedInstruction {
         u16 addr = b2;
         if (w_bit) {
           addr |= (data[offset + 2] << 8);
-          num_bytes++;
+          size++;
         }
         dest.type = OpType_Reg;
         dest.val = Registers_ax;
@@ -427,7 +428,7 @@ struct DecodedInstruction {
         u16 addr = b2;
         if (w_bit) {
           addr |= (data[offset + 2] << 8);
-          num_bytes++;
+          size++;
         }
         dest.type = OpType_Immediate;
         dest.immediate = addr;
@@ -439,81 +440,73 @@ struct DecodedInstruction {
       default:
         break;
     }
-
-    return num_bytes;
   }
 
-  int decodeAdd(const u8 *data, size_t offset) {
-    int num_bytes = 2;
+  void decodeAdd(const u8 *data, size_t offset) {
+    size = 2;
     u8 b1 = data[offset];
     opcode = Instructions_Add;
 
     switch (add_variants[b1]) {
       case AddVariants_RMtoFromR: {
-        rmToFromR(data, offset, num_bytes);
+        rmToFromR(data, offset);
         break;
       }
       case AddVariants_ImmediateToRM: {
-        immediateToRM(data, offset, num_bytes);
+        immediateToRM(data, offset);
         break;
       }
       case AddVariants_ImmediateToAccumulator: {
-        immediateToAccumulator(data, offset, num_bytes);
+        immediateToAccumulator(data, offset);
         break;
       }
     }
-
-    return num_bytes;
   }
 
-  int decodeSub(const u8 *data, size_t offset) {
-    int num_bytes = 2;
+  void decodeSub(const u8 *data, size_t offset) {
+    size = 2;
     u8 b1 = data[offset];
     opcode = Instructions_Sub;
 
     switch (sub_variants[b1]) {
       case SubVariants_RMtoFromR: {
-        rmToFromR(data, offset, num_bytes);
+        rmToFromR(data, offset);
         break;
       }
       case SubVariants_ImmediateToRM: {
-        immediateToRM(data, offset, num_bytes);
+        immediateToRM(data, offset);
         break;
       }
       case SubVariants_ImmediateToAccumulator: {
-        immediateToAccumulator(data, offset, num_bytes);
+        immediateToAccumulator(data, offset);
         break;
       }
     }
-
-    return num_bytes;
   }
 
-  int decodeCmp(const u8 *data, size_t offset) {
-    int num_bytes = 2;
+  void decodeCmp(const u8 *data, size_t offset) {
+    size = 2;
     u8 b1 = data[offset];
     opcode = Instructions_Cmp;
 
     switch (cmp_variants[b1]) {
       case CmpVariants_RMtoFromR: {
-        rmToFromR(data, offset, num_bytes);
+        rmToFromR(data, offset);
         break;
       }
       case CmpVariants_ImmediateToRM: {
-        immediateToRM(data, offset, num_bytes);
+        immediateToRM(data, offset);
         break;
       }
       case CmpVariants_ImmediateToAccumulator: {
-        immediateToAccumulator(data, offset, num_bytes);
+        immediateToAccumulator(data, offset);
         break;
       }
     }
-
-    return num_bytes;
   }
 
-  int decodeJnz(const u8 *data, size_t offset) {
-    int num_bytes = 2;
+  void decodeJnz(const u8 *data, size_t offset) {
+    size = 2;
     u8 b1 = data[offset];
     // NOTE(chogan): Signify that the immediate is only 1 byte (IP-INC8)
     w_bit = 0;
@@ -524,25 +517,20 @@ struct DecodedInstruction {
     dest.immediate = (u16)data[offset + 1];
     dest.immediate += 2;
     source.type = OpType_None;
-
-    return num_bytes;
   }
 
-  int getDisp(const u8 *data, size_t offset) {
-    int num_bytes = 0;
+  void getDisp(const u8 *data, size_t offset) {
     if (mode == 0b01) {
       disp_lo = data[offset + 2];
-      num_bytes += 1;
+      size += 1;
     } else if (mode == 0b10 || (mode == 0b00 && rm == 0b110)) {
       disp_lo = data[offset + 2];
       disp_hi = data[offset + 3];
-      num_bytes += 2;
+      size += 2;
     }
-
-    return num_bytes;
   }
 
-  void immediateToRM(const u8 *data, size_t offset, int &num_bytes) {
+  void immediateToRM(const u8 *data, size_t offset) {
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
     d_bit = 1;
@@ -555,7 +543,7 @@ struct DecodedInstruction {
     mode = (b2 & 0b11000000) >> 6;
     rm = b2 & 0b00000111;
 
-    num_bytes += getDisp(data, offset);
+    getDisp(data, offset);
 
     if (mode == 0b11) {
       dest.type = OpType_Reg;
@@ -576,17 +564,17 @@ struct DecodedInstruction {
     }
 
     source.type = OpType_Immediate;
-    u8 immediate = data[offset + num_bytes];
-    num_bytes++;
+    u8 immediate = data[offset + size];
+    size++;
     if (w_bit && !s_bit) {
-      source.immediate = (data[offset + num_bytes] << 8) | immediate;
-      num_bytes++;
+      source.immediate = (data[offset + size] << 8) | immediate;
+      size++;
     } else {
       source.immediate = immediate;
     }
   }
 
-  void rmToFromR(const u8 *data, size_t offset, int &num_bytes) {
+  void rmToFromR(const u8 *data, size_t offset) {
     u8 b1 = data[offset];
     u8 b2 = data[offset + 1];
     d_bit = (b1 & 0b00000010) >> 1;
@@ -596,7 +584,7 @@ struct DecodedInstruction {
     reg = (b2 & 0b00111000) >> 3;
     rm = (b2 & 0b00000111);
 
-    num_bytes += getDisp(data, offset);
+    getDisp(data, offset);
 
     if (mode == 0b11) {
       dest.type = OpType_Reg;
@@ -632,8 +620,8 @@ struct DecodedInstruction {
     }
   }
 
-  void immediateToAccumulator(const u8 *data, size_t offset, int &num_bytes) {
-    num_bytes--;
+  void immediateToAccumulator(const u8 *data, size_t offset) {
+    size--;
     u8 b1 = data[offset];
     d_bit = 1;
     w_bit = b1 & 0b00000001;
@@ -646,11 +634,11 @@ struct DecodedInstruction {
     }
 
     source.type = OpType_Immediate;
-    u8 immediate = data[offset + num_bytes];
-    num_bytes++;
+    u8 immediate = data[offset + size];
+    size++;
     if (w_bit) {
-      source.immediate = (data[offset + num_bytes] << 8) | immediate;
-      num_bytes++;
+      source.immediate = (data[offset + size] << 8) | immediate;
+      size++;
     } else {
       source.immediate = immediate;
     }
@@ -1071,39 +1059,38 @@ void run(Arguments *args, MachineState *state) {
   u16 *ip = &state->registers[access_patterns[Registers_ip].index].x;
   size_t sz = state->mem.used;
   while (*ip < sz) {
-    int instruction_size = 0;
     DecodedInstruction instr = {};
     size_t i = *ip;
 
     switch (opcodes[state->mem.bytes[i]]) {
       case Instructions_Mov: {
-        instruction_size += instr.decodeMov(state->mem.bytes, i);
+        instr.decodeMov(state->mem.bytes, i);
         break;
       }
       case Instructions_Add: {
-          instruction_size += instr.decodeAdd(state->mem.bytes, i);
+        instr.decodeAdd(state->mem.bytes, i);
         break;
       }
       case Instructions_Sub: {
-          instruction_size += instr.decodeSub(state->mem.bytes, i);
+        instr.decodeSub(state->mem.bytes, i);
         break;
       }
       case Instructions_Cmp: {
-        instruction_size += instr.decodeCmp(state->mem.bytes, i);
+        instr.decodeCmp(state->mem.bytes, i);
         break;
       }
       case Instructions_Jnz: {
-        instruction_size += instr.decodeJnz(state->mem.bytes, i);
+        instr.decodeJnz(state->mem.bytes, i);
         break;
       }
       case Instructions_AddSubCmp: {
         Instructions inst = dispatchAddSubCmp(state->mem.bytes, i);
         if (inst == Instructions_Add) {
-          instruction_size += instr.decodeAdd(state->mem.bytes, i);
+          instr.decodeAdd(state->mem.bytes, i);
         } else if (inst == Instructions_Sub) {
-          instruction_size += instr.decodeSub(state->mem.bytes, i);
+          instr.decodeSub(state->mem.bytes, i);
         } else if (inst == Instructions_Cmp) {
-          instruction_size += instr.decodeCmp(state->mem.bytes, i);
+          instr.decodeCmp(state->mem.bytes, i);
         } else {
           // TODO(chogan): ERROR
         }
@@ -1116,7 +1103,7 @@ void run(Arguments *args, MachineState *state) {
 
     u8 ip_index = access_patterns[Registers_ip].index;
     state->prev[ip_index].x = *ip;
-    *ip += instruction_size;
+    *ip += instr.size;
 
     if (!instr.d_bit) {
       std::swap(instr.dest, instr.source);
