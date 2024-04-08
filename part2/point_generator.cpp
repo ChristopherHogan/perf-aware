@@ -54,6 +54,7 @@ void outputPointsToFile(Point *points, u64 num_points) {
   FILE *file = fopen(filename.c_str(), "w");
   if (file) {
     fprintf(file, "{\"pairs\":[\n");
+    const char *fmt_string = "\t{\"x0\":%.16f, \"y0\":%.16f, \"x1\":%.16f, \"y1\":%.16f}%s";
 
     for (u64 i = 0; i < num_points; ++i) {
       f64 x0 = points[i].x0;
@@ -62,13 +63,13 @@ void outputPointsToFile(Point *points, u64 num_points) {
       f64 y1 = points[i].y1;
 
       const char *line_spearator = i == num_points - 1 ? "\n" : ",\n";
-      fprintf(file, "{\"x0\":%f, \"y0\":%f, \"x1\":%f, \"y1\":%f}%s", x0, y0, x1, y1, line_spearator);
+      fprintf(file, fmt_string, x0, y0, x1, y1, line_spearator);
     }
 
     fprintf(file, "]}\n");
     fclose(file);
   } else {
-    // TODO(chogan): ERROR
+    fprintf(stderr, "ERROR: Couldn't open file %s\n", filename.c_str());
   }
 }
 
@@ -84,7 +85,7 @@ int main(int argc, char **argv) {
     outputPointsToFile(points, args.num_points);
     free(points);
   } else {
-    fprintf(stdout, "USAGE: %s \n", argv[0]);
+    fprintf(stdout, "USAGE: %s <seed> <num_points>\n", argv[0]);
   }
 
   return 0;
