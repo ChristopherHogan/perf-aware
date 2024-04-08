@@ -13,6 +13,7 @@ genPoints*
 
 listing_*
 !listing_*.asm
+!listing_*.cpp
 
 # generated
 listing_[0-9]*_decoded*
