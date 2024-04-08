@@ -9,6 +9,7 @@ GTAGS
 # binaries
 *sim86
 *sim86db
+genPoints*
 
 listing_*
 !listing_*.asm
@@ -16,3 +17,4 @@ listing_*
 # generated
 listing_[0-9]*_decoded*
 *.data
+*.json
