@@ -6,28 +6,25 @@
 #include <random>
 #include <string>
 
+typedef uint8_t u8;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef int32_t s32;
 typedef double f64;
 
+#include "perfaware_haversine.h"
+#include "perfaware_memory.h"
 #include "listing_0065_haversine_formula.cpp"
-
-const f64 kEarthRadius = 6372.8;
+#include "perfaware_haversine.cpp"
+#include "perfaware_memory.cpp"
 
 struct Arguments {
   u64 seed;
   u64 num_points;
 };
 
-struct Point {
-  f64 x0;
-  f64 y0;
-  f64 x1;
-  f64 y1;
-};
-
-Point *generatePoints(Arguments *args) {
-  Point *points = (Point*)malloc(sizeof(Point) * args->num_points);
+Point *generatePoints(Arena *arena, Arguments *args) {
+  Point *points = pushArray<Point>(arena, args->num_points);
 
   std::uniform_real_distribution<f64> unifX(-180, 180);
   std::uniform_real_distribution<f64> unifY(-90, 90);
@@ -44,25 +41,6 @@ Point *generatePoints(Arguments *args) {
   }
 
   return points;
-}
-
-f64 *calculateHaversine(Point *points, u64 num_points) {
-  // NOTE(chogan): Add 1 to store the avg
-  f64 *haversine_answers = (f64*)malloc(sizeof(f64) * (num_points + 1));
-
-  u64 count = num_points;
-  u64 offset = 0;
-  f64 sum = 0;
-  while (count--) {
-    f64 answer = ReferenceHaversine(points[offset].x0, points[offset].y0,
-                                    points[offset].x1, points[offset].y1, kEarthRadius);
-    haversine_answers[offset] = answer;
-    sum += answer;
-    offset++;
-  }
-  haversine_answers[offset] = sum / (f64)num_points;
-
-  return haversine_answers;
 }
 
 void outputPointsToFile(Point *points, u64 num_points) {
@@ -110,23 +88,19 @@ int main(int argc, char **argv) {
   const int kNumArgs = 3;
 
   if (argc == kNumArgs) {
+    Arena arena = initArenaAndAllocate(KILOBYTES(64));
+
     Arguments args = {};
     args.seed = atoll(argv[1]);
     args.num_points = atoll(argv[2]);
-    Point *points = generatePoints(&args);
-    f64 *answers = calculateHaversine(points, args.num_points);
-    if (points) {
-      outputPointsToFile(points, args.num_points);
-      free(points);
-    } else {
-      fprintf(stdout, "ERROR: Allocation failed\n");
-    }
-    if (answers) {
-      outputAnswersToFile(answers, args.num_points);
-      free(answers);
-    } else {
-      fprintf(stdout, "ERROR: Allocation failed\n");
-    }
+
+    Point *points = generatePoints(&arena, &args);
+    f64 *answers = calculateHaversine(&arena, points, args.num_points);
+
+    outputPointsToFile(points, args.num_points);
+    outputAnswersToFile(answers, args.num_points);
+
+    destroyArena(&arena);
   } else {
     fprintf(stdout, "USAGE: %s <seed> <num_points>\n", argv[0]);
   }
