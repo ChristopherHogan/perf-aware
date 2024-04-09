@@ -43,9 +43,26 @@ Point *generatePoints(Arguments *args) {
     offset++;
   }
 
-  (void)ReferenceHaversine;
-
   return points;
+}
+
+f64 *calculateHaversine(Point *points, u64 num_points) {
+  // NOTE(chogan): Add 1 to store the avg
+  f64 *haversine_answers = (f64*)malloc(sizeof(f64) * (num_points + 1));
+
+  u64 count = num_points;
+  u64 offset = 0;
+  f64 sum = 0;
+  while (count--) {
+    f64 answer = ReferenceHaversine(points[offset].x0, points[offset].y0,
+                                    points[offset].x1, points[offset].y1, kEarthRadius);
+    haversine_answers[offset] = answer;
+    sum += answer;
+    offset++;
+  }
+  haversine_answers[offset] = sum / (f64)num_points;
+
+  return haversine_answers;
 }
 
 void outputPointsToFile(Point *points, u64 num_points) {
@@ -72,6 +89,21 @@ void outputPointsToFile(Point *points, u64 num_points) {
     fprintf(stderr, "ERROR: Couldn't open file %s\n", filename.c_str());
   }
 }
+void outputAnswersToFile(f64 *answers, u64 num_points) {
+  std::string filename = "answers_" + std::to_string(num_points) + ".f64";
+
+  FILE *file = fopen(filename.c_str(), "w");
+  if (file) {
+    u64 count = num_points + 1;
+    u64 offset = 0;
+    while (count--) {
+      fprintf(file, "%.16f\n", answers[offset++]);
+    }
+    fclose(file);
+  } else {
+    fprintf(stderr, "ERROR: Couldn't open file %s\n", filename.c_str());
+  }
+}
 
 int main(int argc, char **argv) {
 
@@ -82,8 +114,19 @@ int main(int argc, char **argv) {
     args.seed = atoll(argv[1]);
     args.num_points = atoll(argv[2]);
     Point *points = generatePoints(&args);
-    outputPointsToFile(points, args.num_points);
-    free(points);
+    f64 *answers = calculateHaversine(points, args.num_points);
+    if (points) {
+      outputPointsToFile(points, args.num_points);
+      free(points);
+    } else {
+      fprintf(stdout, "ERROR: Allocation failed\n");
+    }
+    if (answers) {
+      outputAnswersToFile(answers, args.num_points);
+      free(answers);
+    } else {
+      fprintf(stdout, "ERROR: Allocation failed\n");
+    }
   } else {
     fprintf(stdout, "USAGE: %s <seed> <num_points>\n", argv[0]);
   }
