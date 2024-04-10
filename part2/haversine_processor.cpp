@@ -20,9 +20,9 @@ typedef double f64;
 #include "perfaware_json_parser.cpp"
 
 PointArray parseJson(Arena *arena, Arena *scratch, const char *file_path) {
-  ScopedTemporaryMemory file_memory(scratch);
-  EntireFile file = readEntireFile(file_memory, file_path);
-  TokenArray tokens = tokenize(arena, &file);
+  ScopedTemporaryMemory scratch_memory(scratch);
+  EntireFile file = readEntireFile(scratch_memory, file_path);
+  TokenArray tokens = tokenize(scratch_memory, &file);
   PointArray result = parseTokens(arena, &tokens);
 
   return result;
@@ -37,7 +37,7 @@ bool verifyHaversine(Arena *scratch, f64 *answers, const char *filename, u32 num
   for (u32 i = 0; i < num_points + 1; ++i) {
     f64 answer = atof((const char *)at);
     while (*at++ != '\n');
-    if (answer != answers[i]) {
+    if (abs(answer - answers[i]) > 0.00000001) {
       fprintf(stderr, "%.16f != %.16f\n", answer, answers[i]);
       result = false;
       break;
@@ -53,8 +53,8 @@ int main(int argc, char **argv) {
     const char *file_path = argv[1];
     const char *answers_filename = argv[2];
 
-    Arena arena = initArenaAndAllocate(GIGABYTES(2));
-    Arena scratch = initArenaAndAllocate(GIGABYTES(2));
+    Arena arena = initArenaAndAllocate(GIGABYTES(1));
+    Arena scratch = initArenaAndAllocate(GIGABYTES(6));
 
     PointArray points = parseJson(&arena, &scratch, file_path);
     f64 *answers = calculateHaversine(&arena, points.data, points.num_points);

@@ -10,6 +10,9 @@ GTAGS
 *sim86
 *sim86db
 genPoints*
+haversine*
+!haversine*.h
+!haversine*.cpp
 
 listing_*
 !listing_*.asm
@@ -19,3 +22,4 @@ listing_*
 listing_[0-9]*_decoded*
 *.data
 *.json
+*.f64
