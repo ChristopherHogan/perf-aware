@@ -4,7 +4,9 @@
 #include <assert.h>
 #include <string.h>
 
-#define KILOBYTES(n) (n * 1024)
+#define KILOBYTES(n) ((n) * 1024)
+#define MEGABYTES(n) (KILOBYTES((n)) * 1024)
+#define GIGABYTES(n) (MEGABYTES((n)) * 1024LL)
 
 struct Arena {
   u8 *base;

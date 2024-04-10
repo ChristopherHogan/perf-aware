@@ -195,21 +195,25 @@ PointArray parseTokens(Arena *arena, TokenArray *tokens) {
     ++at;  // x0
     ++at;  // :
     f64 x0 = atof(at->data);
+    ++at;
 
     ++at;  // ,
     ++at;  // y0
     ++at;  // :
     f64 y0 = atof(at->data);
+    ++at;
 
     ++at;  // ,
     ++at;  // x1
     ++at;  // :
     f64 x1 = atof(at->data);
+    ++at;
 
     ++at;  // ,
     ++at;  // y1
     ++at;  // :
     f64 y1 = atof(at->data);
+    ++at;
 
     ++at;  // }
     ++at;  // ,

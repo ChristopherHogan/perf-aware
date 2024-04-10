@@ -19,29 +19,54 @@ typedef double f64;
 #include "perfaware_memory.cpp"
 #include "perfaware_json_parser.cpp"
 
-PointArray parseJson(Arena *arena, const char *file_path) {
-  // TODO(chogan): temp arena for file
-  EntireFile file = readEntireFile(arena, file_path);
+PointArray parseJson(Arena *arena, Arena *scratch, const char *file_path) {
+  ScopedTemporaryMemory file_memory(scratch);
+  EntireFile file = readEntireFile(file_memory, file_path);
   TokenArray tokens = tokenize(arena, &file);
   PointArray result = parseTokens(arena, &tokens);
 
   return result;
 }
 
+bool verifyHaversine(Arena *scratch, f64 *answers, const char *filename, u32 num_points) {
+  ScopedTemporaryMemory file_memory(scratch);
+  EntireFile file = readEntireFile(file_memory, filename);
+  u8 *at = file.data;
+  bool result = true;
+
+  for (u32 i = 0; i < num_points + 1; ++i) {
+    f64 answer = atof((const char *)at);
+    while (*at++ != '\n');
+    if (answer != answers[i]) {
+      fprintf(stderr, "%.16f != %.16f\n", answer, answers[i]);
+      result = false;
+      break;
+    }
+  }
+
+  return result;
+}
+
 int main(int argc, char **argv) {
 
-  if (argc == 2) {
+  if (argc == 3) {
     const char *file_path = argv[1];
-    Arena arena = initArenaAndAllocate(KILOBYTES(64));
-    PointArray points = parseJson(&arena, file_path);
+    const char *answers_filename = argv[2];
+
+    Arena arena = initArenaAndAllocate(GIGABYTES(2));
+    Arena scratch = initArenaAndAllocate(GIGABYTES(2));
+
+    PointArray points = parseJson(&arena, &scratch, file_path);
     f64 *answers = calculateHaversine(&arena, points.data, points.num_points);
 
-    // check against reference
-    (void)answers;
+    if (!verifyHaversine(&scratch, answers, answers_filename, points.num_points)) {
+      fprintf(stderr, "Test failed\n");
+      exit(1);
+    }
 
     destroyArena(&arena);
   } else {
-    fprintf(stderr, "USAGE: %s [] <>\n", argv[0]);
+    fprintf(stderr, "USAGE: %s <JSON_path> <haversine_answers_path>\n", argv[0]);
   }
 
   return 0;
