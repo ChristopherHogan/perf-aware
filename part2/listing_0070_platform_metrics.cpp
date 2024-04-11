@@ -1,13 +1,13 @@
 /* ========================================================================
 
    (C) Copyright 2023 by Molly Rocket, Inc., All Rights Reserved.
-   
+
    This software is provided 'as-is', without any express or implied
    warranty. In no event will the authors be held liable for any damages
    arising from the use of this software.
-   
+
    Please see https://computerenhance.com for more information
-   
+
    ======================================================================== */
 
 /* ========================================================================
@@ -49,7 +49,7 @@ static u64 ReadOSTimer(void)
 	// but just in case anyone is using this file from C, I include it.
 	struct timeval Value;
 	gettimeofday(&Value, 0);
-	
+
 	u64 Result = GetOSTimerFreq()*(u64)Value.tv_sec + (u64)Value.tv_usec;
 	return Result;
 }
@@ -65,7 +65,7 @@ inline u64 ReadCPUTimer(void)
 	// NOTE(casey): If you were on ARM, you would need to replace __rdtsc
 	// with one of their performance counter read instructions, depending
 	// on which ones are available on your platform.
-	
+
 	return __rdtsc();
 }
 

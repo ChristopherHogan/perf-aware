@@ -12,11 +12,13 @@ typedef uint64_t u64;
 typedef int32_t s32;
 typedef double f64;
 
+#include "perfaware_timer.h"
 #include "perfaware_haversine.h"
 #include "perfaware_memory.h"
 #include "listing_0065_haversine_formula.cpp"
 #include "perfaware_haversine.cpp"
 #include "perfaware_memory.cpp"
+#include "perfaware_timer.cpp"
 
 struct Arguments {
   u64 seed;
@@ -88,6 +90,7 @@ int main(int argc, char **argv) {
   const int kNumArgs = 3;
 
   if (argc == kNumArgs) {
+    BeginProfile;
     Arena arena = initArenaAndAllocate(KILOBYTES(64));
 
     Arguments args = {};
@@ -101,6 +104,8 @@ int main(int argc, char **argv) {
     outputAnswersToFile(answers, args.num_points);
 
     destroyArena(&arena);
+
+    EndAndPrintProfile;
   } else {
     fprintf(stdout, "USAGE: %s <seed> <num_points>\n", argv[0]);
   }

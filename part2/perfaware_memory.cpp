@@ -46,6 +46,7 @@ void initArena(Arena *arena, size_t bytes, u8 *base) {
 }
 
 Arena initArenaAndAllocate(size_t bytes) {
+  TimeFunction;
   Arena result = {};
   result.base = (u8 *)malloc(bytes);
   result.capacity = bytes;
@@ -54,6 +55,7 @@ Arena initArenaAndAllocate(size_t bytes) {
 }
 
 void destroyArena(Arena *arena) {
+  TimeFunction;
   // TODO(chogan): Check for temp count?
   free(arena->base);
   arena->base = 0;

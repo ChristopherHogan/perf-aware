@@ -3,6 +3,7 @@
 const f64 kEarthRadius = 6372.8;
 
 f64 *calculateHaversine(Arena *arena, Point *points, u64 num_points) {
+  TimeFunction;
   // NOTE(chogan): Add 1 to store the avg
   f64 *haversine_answers = pushArray<f64>(arena, num_points + 1);
 
