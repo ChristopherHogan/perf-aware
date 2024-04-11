@@ -10,7 +10,7 @@ echo -n "Compilation Time:"
 time {
     g++ ${release_flags} ${common_flags} -o genPoints point_generator.cpp &
     g++ ${debug_flags} ${common_flags} -o genPoints_db point_generator.cpp &
-    g++ ${release_flags} ${common_flags} -o haversine haversine_processor.cpp &
+    g++ ${release_flags} -DPERFAWARE_PROFILE ${common_flags} -o haversine haversine_processor.cpp &
     g++ ${debug_flags} ${common_flags} -o haversine_db haversine_processor.cpp &
     wait
 }

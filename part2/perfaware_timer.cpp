@@ -17,7 +17,7 @@ static u64 readCpuTimer(void) {
 	return __rdtsc();
 }
 
-static u64 estimateCPUFrequency(u64 ms) {
+[[maybe_unused]] static u64 estimateCPUFrequency(u64 ms) {
 	u64 milliseconds_to_wait = ms;
 	u64 os_freq = getOsTimerFreq();
 
