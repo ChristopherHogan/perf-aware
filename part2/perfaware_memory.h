@@ -57,18 +57,18 @@ Arena initArenaAndAllocate(size_t bytes);
 void destroyArena(Arena *arena);
 size_t getRemainingCapacity(Arena *arena);
 void growArena(Arena *arena, size_t new_size);
-u8 *pushSize(Arena *arena, size_t size, size_t alignment = 8);
-u8 *pushSizeAndClear(Arena *arena, size_t size, size_t alignment = 8);
+u8 *pushSize(Arena *arena, size_t size, size_t alignment = 0);
+u8 *pushSizeAndClear(Arena *arena, size_t size, size_t alignment = 0);
 
 template<typename T>
-inline T *pushStruct(Arena *arena, size_t alignment = 8) {
+inline T *pushStruct(Arena *arena, size_t alignment = 0) {
   T *result = reinterpret_cast<T *>(pushSize(arena, sizeof(T), alignment));
 
   return result;
 }
 
 template<typename T>
-inline T *pushClearedStruct(Arena *arena, size_t alignment = 8) {
+inline T *pushClearedStruct(Arena *arena, size_t alignment = 0) {
   T *result = reinterpret_cast<T *>(pushSizeAndClear(arena, sizeof(T),
                                                      alignment));
 
@@ -76,7 +76,7 @@ inline T *pushClearedStruct(Arena *arena, size_t alignment = 8) {
 }
 
 template<typename T>
-inline T *pushArray(Arena *arena, int count, size_t alignment = 8) {
+inline T *pushArray(Arena *arena, int count, size_t alignment = 0) {
   T *result = reinterpret_cast<T *>(pushSize(arena, sizeof(T) * count,
                                              alignment));
 
@@ -84,7 +84,7 @@ inline T *pushArray(Arena *arena, int count, size_t alignment = 8) {
 }
 
 template<typename T>
-inline T *pushClearedArray(Arena *arena, int count, size_t alignment = 8) {
+inline T *pushClearedArray(Arena *arena, int count, size_t alignment = 0) {
   T *result = reinterpret_cast<T *>(pushSizeAndClear(arena, sizeof(T) * count,
                                                      alignment));
 

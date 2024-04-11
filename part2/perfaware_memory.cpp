@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "perfaware_memory.h"
 
 using std::ptrdiff_t;
@@ -104,19 +106,24 @@ u8 *pushSize(Arena *arena, size_t size, size_t alignment) {
   bool can_fit = size + arena->used <= arena->capacity;
 
   if (!can_fit) {
-    // TODO(chogan):
+    fprintf(stderr, "ERROR: Can't fit memory request of size %zu in arena\n", size);
   }
 
   assert(can_fit);
 
+  u8 *result = NULL;
   u8 *base_result = arena->base + arena->used;
-  u8 *result = (u8 *)alignForward((uintptr_t)base_result, alignment);
 
-  if (base_result != result) {
-    ptrdiff_t alignment_size = result - base_result;
-    arena->used += alignment_size;
-    // DLOG(INFO) << "PushSize added " << alignment_size
-    //            << " bytes of padding for alignment" << std::endl;
+  if (alignment) {
+    result = (u8 *)alignForward((uintptr_t)base_result, alignment);
+
+    if (base_result != result) {
+      ptrdiff_t alignment_size = result - base_result;
+      arena->used += alignment_size;
+      fprintf(stderr, "pushSize added %td bytes of padding for alignment\n", alignment_size);
+    }
+  } else {
+    result = base_result;
   }
   arena->used += size;
 
