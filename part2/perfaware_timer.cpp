@@ -1,11 +1,11 @@
 #include <x86intrin.h>
 #include <sys/time.h>
 
-static u64 getOsTimerFreq(void) {
+static u64 getOsTimerFreq() {
 	return 1000000;
 }
 
-static u64 readOsTimer(void) {
+static u64 readOsTimer() {
 	timeval value;
 	gettimeofday(&value, 0);
 
@@ -13,7 +13,7 @@ static u64 readOsTimer(void) {
 	return result;
 }
 
-static u64 readCpuTimer(void) {
+static u64 readCpuTimer() {
 	return __rdtsc();
 }
 
@@ -42,17 +42,33 @@ static u64 readCpuTimer(void) {
   return cpu_freq;
 }
 
-void printTimeElapsed(const char *label, u64 total_elapsed, u64 elapsed) {
-  printf("\t%s: %lu (%.2f%%)\n", label, elapsed, 100.0 * (f64)elapsed / total_elapsed);
+#ifdef PERFAWARE_PROFILE
+
+static void printTimeElapsed(u64 total_elapsed, ProfileEntry *entry) {
+  u64 elapsed = entry->elapsed - entry->elapsed_children;
+  f64 percent = 100.0 * (f64)elapsed / total_elapsed;
+  printf("\t%s[%lu]: %lu (%.2f%%", entry->label, entry->hit_count, elapsed, percent);
+
+  if (entry->elapsed_children) {
+    f64 percent_with_children = 100.0 * (f64)entry->elapsed / total_elapsed;
+    printf(", %.2f%% w/children", percent_with_children);
+  }
+  printf(")\n");
 }
 
-Timer::Timer(const char *name, u32 index) : start(0), index(index) {
-  global_profiler_.measurement_labels[index] = name;
-  start = readCpuTimer();
+static void beginProfile() {
+  global_profiler_.cpu_freq = estimateCPUFrequency(100);
+  global_profiler_.start = readCpuTimer();
 }
 
-Timer::~Timer() {
-  u64 end = readCpuTimer();
-  u64 elapsed = end - start;
-  global_profiler_.measurements[index] = elapsed;
+static void endAndPrintProfile() {
+  u64 elapsed = readCpuTimer() - global_profiler_.start;
+  f64 ms = elapsed / (f64)global_profiler_.cpu_freq * 1000.0;
+  printf("Total time: %fms (CPU freq %lu)\n", ms, global_profiler_.cpu_freq);
+  for (u32 i = 1; i < global_profiler_.count; ++i) {
+    ProfileEntry *entry = global_profiler_.entries + i;
+    printTimeElapsed(elapsed, entry);
+  }
 }
+
+#endif

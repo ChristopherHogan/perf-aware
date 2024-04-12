@@ -100,6 +100,7 @@ void addTokenToArray(Arena *arena, TokenArray *arr, TokenType type,
 }
 
 TokenArray tokenize(Arena *arena, EntireFile *entire_file) {
+  TimeFunction;
   u32 line_number = 1;
   TokenArray result = {};
 
@@ -175,6 +176,7 @@ TokenArray tokenize(Arena *arena, EntireFile *entire_file) {
 }
 
 PointArray parseTokens(Arena *arena, TokenArray *tokens) {
+  TimeFunction;
   u32 num_points = tokens->num_points / 4.0;
   Point *data = pushArray<Point>(arena, num_points);
   PointArray result = {};
