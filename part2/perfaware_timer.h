@@ -3,10 +3,11 @@
 
 #ifdef PERFAWARE_PROFILE
 
-#define TimeBlock(name) TimeBlockHelper(name, __COUNTER__)
-#define TimeBlockHelper(name, counter) \
-  Timer time_block_timer_##counter(name, counter + 1)
-
+#define NameConcat2(a, b) a##b
+#define NameConcat(a, b) NameConcat2(a, b)
+#define TimeBlock(name) TimeBandwidth(name, 0)
+#define TimeBandwidth(name, byte_count) \
+  Timer NameConcat(Block, __LINE__)(name, __COUNTER__ + 1, byte_count)
 #define TimeFunction TimeBlock(__func__)
 #define BeginProfile beginProfile()
 #define EndAndPrintProfile endAndPrintProfile()
@@ -20,6 +21,7 @@ struct ProfileEntry {
   u64 elapsed_exclusive;
   u64 elapsed_inclusive;
   u64 hit_count;
+  u64 processed_bytes;
   const char *label;
 };
 
@@ -41,13 +43,14 @@ struct Timer {
   u32 index;
   u32 parent_index;
 
-  Timer(const char *name_, u32 index_) {
+  Timer(const char *name_, u32 index_, u64 processed_bytes_) {
     parent_index = global_profiler_parent_;
     index = index_;
     label = name_;
 
     ProfileEntry *entry = global_profiler_.entries + index;
     old_elapsed_inclusive = entry->elapsed_inclusive;
+    entry->processed_bytes += processed_bytes_;
 
     global_profiler_parent_ = index;
     start = readCpuTimer();

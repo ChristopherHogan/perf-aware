@@ -52,7 +52,20 @@ static void printTimeElapsed(u64 total_elapsed, ProfileEntry *entry) {
     f64 percent_with_children = 100.0 * (f64)entry->elapsed_inclusive / total_elapsed;
     printf(", %.2f%% w/children", percent_with_children);
   }
-  printf(")\n");
+  printf(")");
+
+  if (entry->processed_bytes) {
+    f64 megabyte = 1024.0 * 1024.0;
+    f64 gigabyte = megabyte * 1024.0;
+
+    f64 seconds = (f64)entry->elapsed_inclusive / (f64)global_profiler_.cpu_freq;
+    f64 bytes_per_second = (f64)entry->processed_bytes / seconds;
+    f64 megabytes = (f64)entry->processed_bytes / megabyte;
+    f64 gigabytes_per_second = bytes_per_second / gigabyte;
+
+    printf("\t%.3fmb at %.2fgb/s", megabytes, gigabytes_per_second);
+  }
+  printf("\n");
 }
 
 static void beginProfile() {
