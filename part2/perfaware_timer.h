@@ -10,6 +10,9 @@
 #define TimeFunction TimeBlock(__func__)
 #define BeginProfile beginProfile()
 #define EndAndPrintProfile endAndPrintProfile()
+#define ProfilerEndOfCompilationUnit \
+  static_assert(__COUNTER__ < ArrayCount(Profiler::entries), \
+                "Number of profile points exceeds size of Profiler::entries array")
 
 const u32 kMaxProfileEntries = 64;
 
@@ -66,12 +69,23 @@ struct Timer {
   }
 };
 
+#elif defined(PERFAWARE_PROFILE_MAIN)
+
+static u64 global_profiler_start;
+
+#define TimeFunction
+#define TimeBlock(...)
+#define TimeBlockHelper(...)
+#define BeginProfile beginProfile()
+#define EndAndPrintProfile endAndPrintProfile()
+#define ProfilerEndOfCompilationUnit
 #else
 #define TimeFunction
-#define TimeBlock(name)
-#define TimeBlockHelper(name, counter)
+#define TimeBlock(...)
+#define TimeBlockHelper(...)
 #define BeginProfile
 #define EndAndPrintProfile
+#define ProfilerEndOfCompilationUnit
 #endif
 
 #endif  // PERFAWARE_TIMER_H_

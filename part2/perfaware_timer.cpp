@@ -72,4 +72,17 @@ static void endAndPrintProfile() {
   }
 }
 
+#elif defined(PERFAWARE_PROFILE_MAIN)
+
+static void beginProfile() {
+  global_profiler_start = readCpuTimer();
+}
+
+static void endAndPrintProfile() {
+  u64 elapsed = readCpuTimer() - global_profiler_start;
+  u64 cpu_freq = estimateCPUFrequency(100);
+  f64 ms = elapsed / (f64)cpu_freq * 1000.0;
+  printf("Total time: %fms (CPU freq %lu)\n", ms, cpu_freq);
+}
+
 #endif
