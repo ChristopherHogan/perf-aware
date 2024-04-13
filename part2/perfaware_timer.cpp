@@ -49,8 +49,8 @@ static void printTimeElapsed(u64 total_elapsed, ProfileEntry *entry) {
   f64 percent = 100.0 * (f64)elapsed / total_elapsed;
   printf("\t%s[%lu]: %lu (%.2f%%", entry->label, entry->hit_count, elapsed, percent);
 
-  if (entry->elapsed_children) {
-    f64 percent_with_children = 100.0 * (f64)entry->elapsed / total_elapsed;
+  if (entry->elapsed_at_root != elapsed) {
+    f64 percent_with_children = 100.0 * (f64)entry->elapsed_at_root / total_elapsed;
     printf(", %.2f%% w/children", percent_with_children);
   }
   printf(")\n");
@@ -65,9 +65,11 @@ static void endAndPrintProfile() {
   u64 elapsed = readCpuTimer() - global_profiler_.start;
   f64 ms = elapsed / (f64)global_profiler_.cpu_freq * 1000.0;
   printf("Total time: %fms (CPU freq %lu)\n", ms, global_profiler_.cpu_freq);
-  for (u32 i = 1; i < global_profiler_.count; ++i) {
+  for (u32 i = 1; i < ArrayCount(global_profiler_.entries); ++i) {
     ProfileEntry *entry = global_profiler_.entries + i;
-    printTimeElapsed(elapsed, entry);
+    if (entry->elapsed) {
+      printTimeElapsed(elapsed, entry);
+    }
   }
 }
 

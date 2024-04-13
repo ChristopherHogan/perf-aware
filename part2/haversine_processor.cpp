@@ -12,6 +12,8 @@ typedef int32_t s32;
 typedef int64_t s64;
 typedef double f64;
 
+#define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 #include "perfaware_timer.h"
 #include "perfaware_memory.h"
 #include "perfaware_haversine.h"
@@ -21,6 +23,7 @@ typedef double f64;
 #include "perfaware_memory.cpp"
 #include "perfaware_json_parser.cpp"
 #include "perfaware_timer.cpp"
+
 
 PointArray parseJson(Arena *arena, Arena *scratch, const char *file_path) {
   TimeFunction;

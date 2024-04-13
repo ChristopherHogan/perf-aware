@@ -5,7 +5,6 @@
 
 #define TimeBlock(name) TimeBlockHelper(name, __COUNTER__)
 #define TimeBlockHelper(name, counter) \
-  global_profiler_.count++; \
   Timer time_block_timer_##counter(name, counter + 1)
 
 #define TimeFunction TimeBlock(__func__)
@@ -17,6 +16,7 @@ const u32 kMaxProfileEntries = 64;
 struct ProfileEntry {
   u64 elapsed;
   u64 elapsed_children;
+  u64 elapsed_at_root;
   u64 hit_count;
   const char *label;
 };
@@ -25,7 +25,6 @@ struct Profiler {
   ProfileEntry entries[kMaxProfileEntries];
   u64 cpu_freq;
   u64 start;
-  u32 count;
 };
 
 static Profiler global_profiler_;
@@ -35,11 +34,19 @@ static u64 readCpuTimer();
 
 struct Timer {
   u64 start;
+  u64 old_elapsed_at_root;
   const char *label;
   u32 index;
   u32 parent_index;
 
-  Timer(const char *name, u32 index) : start(0), label(name), index(index), parent_index(global_profiler_parent_) {
+  Timer(const char *name_, u32 index_) {
+    parent_index = global_profiler_parent_;
+    index = index_;
+    label = name_;
+
+    ProfileEntry *entry = global_profiler_.entries + index;
+    old_elapsed_at_root = entry->elapsed_at_root;
+
     global_profiler_parent_ = index;
     start = readCpuTimer();
   }
@@ -53,6 +60,7 @@ struct Timer {
     ProfileEntry *parent = global_profiler_.entries + parent_index;
 
     parent->elapsed_children += elapsed;
+    cur->elapsed_at_root = old_elapsed_at_root + elapsed;
     cur->elapsed += elapsed;
     cur->label = label;
     cur->hit_count++;
