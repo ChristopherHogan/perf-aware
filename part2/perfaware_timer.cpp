@@ -45,12 +45,11 @@ static u64 readCpuTimer() {
 #ifdef PERFAWARE_PROFILE
 
 static void printTimeElapsed(u64 total_elapsed, ProfileEntry *entry) {
-  u64 elapsed = entry->elapsed - entry->elapsed_children;
-  f64 percent = 100.0 * (f64)elapsed / total_elapsed;
-  printf("\t%s[%lu]: %lu (%.2f%%", entry->label, entry->hit_count, elapsed, percent);
+  f64 percent = 100.0 * (f64)entry->elapsed_exclusive / total_elapsed;
+  printf("\t%s[%lu]: %lu (%.2f%%", entry->label, entry->hit_count, entry->elapsed_exclusive, percent);
 
-  if (entry->elapsed_at_root != elapsed) {
-    f64 percent_with_children = 100.0 * (f64)entry->elapsed_at_root / total_elapsed;
+  if (entry->elapsed_inclusive != entry->elapsed_exclusive) {
+    f64 percent_with_children = 100.0 * (f64)entry->elapsed_inclusive / total_elapsed;
     printf(", %.2f%% w/children", percent_with_children);
   }
   printf(")\n");
@@ -67,7 +66,7 @@ static void endAndPrintProfile() {
   printf("Total time: %fms (CPU freq %lu)\n", ms, global_profiler_.cpu_freq);
   for (u32 i = 1; i < ArrayCount(global_profiler_.entries); ++i) {
     ProfileEntry *entry = global_profiler_.entries + i;
-    if (entry->elapsed) {
+    if (entry->elapsed_exclusive) {
       printTimeElapsed(elapsed, entry);
     }
   }

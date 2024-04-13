@@ -14,9 +14,8 @@
 const u32 kMaxProfileEntries = 64;
 
 struct ProfileEntry {
-  u64 elapsed;
-  u64 elapsed_children;
-  u64 elapsed_at_root;
+  u64 elapsed_exclusive;
+  u64 elapsed_inclusive;
   u64 hit_count;
   const char *label;
 };
@@ -34,7 +33,7 @@ static u64 readCpuTimer();
 
 struct Timer {
   u64 start;
-  u64 old_elapsed_at_root;
+  u64 old_elapsed_inclusive;
   const char *label;
   u32 index;
   u32 parent_index;
@@ -45,7 +44,7 @@ struct Timer {
     label = name_;
 
     ProfileEntry *entry = global_profiler_.entries + index;
-    old_elapsed_at_root = entry->elapsed_at_root;
+    old_elapsed_inclusive = entry->elapsed_inclusive;
 
     global_profiler_parent_ = index;
     start = readCpuTimer();
@@ -59,9 +58,9 @@ struct Timer {
     ProfileEntry *cur = global_profiler_.entries + index;
     ProfileEntry *parent = global_profiler_.entries + parent_index;
 
-    parent->elapsed_children += elapsed;
-    cur->elapsed_at_root = old_elapsed_at_root + elapsed;
-    cur->elapsed += elapsed;
+    parent->elapsed_exclusive -= elapsed;
+    cur->elapsed_exclusive += elapsed;
+    cur->elapsed_inclusive = old_elapsed_inclusive + elapsed;
     cur->label = label;
     cur->hit_count++;
   }
