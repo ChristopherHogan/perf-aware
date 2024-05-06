@@ -1,8 +1,7 @@
 #include <stdio.h>
+#include <stddef.h>
 
 #include "perfaware_memory.h"
-
-using std::ptrdiff_t;
 
 bool isPowerOfTwo(size_t val) {
   bool result = (val & (val - 1)) == 0;

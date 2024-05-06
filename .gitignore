@@ -5,6 +5,7 @@ GRTAGS
 GTAGS
 
 .vscode/
+build/
 
 # binaries
 *sim86

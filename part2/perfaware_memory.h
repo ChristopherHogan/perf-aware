@@ -76,7 +76,7 @@ inline T *pushClearedStruct(Arena *arena, size_t alignment = 0) {
 }
 
 template<typename T>
-inline T *pushArray(Arena *arena, int count, size_t alignment = 0) {
+inline T *pushArray(Arena *arena, u64 count, size_t alignment = 0) {
   T *result = reinterpret_cast<T *>(pushSize(arena, sizeof(T) * count,
                                              alignment));
 

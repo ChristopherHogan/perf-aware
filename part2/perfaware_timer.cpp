@@ -1,3 +1,24 @@
+#if _WIN32
+
+#include <intrin.h>
+#include <windows.h>
+
+static u64 getOsTimerFreq()
+{
+	LARGE_INTEGER freq;
+	QueryPerformanceFrequency(&freq);
+	return freq.QuadPart;
+}
+
+static u64 readOsTimer()
+{
+	LARGE_INTEGER value;
+	QueryPerformanceCounter(&value);
+	return value.QuadPart;
+}
+
+#else
+
 #include <x86intrin.h>
 #include <sys/time.h>
 
@@ -13,9 +34,12 @@ static u64 readOsTimer() {
 	return result;
 }
 
+#endif
+
 static u64 readCpuTimer() {
 	return __rdtsc();
 }
+
 
 [[maybe_unused]] static u64 estimateCPUFrequency(u64 ms) {
 	u64 milliseconds_to_wait = ms;
@@ -46,7 +70,7 @@ static u64 readCpuTimer() {
 
 static void printTimeElapsed(u64 total_elapsed, ProfileEntry *entry) {
   f64 percent = 100.0 * (f64)entry->elapsed_exclusive / total_elapsed;
-  printf("\t%s[%lu]: %lu (%.2f%%", entry->label, entry->hit_count, entry->elapsed_exclusive, percent);
+  printf("\t%s[%llu]: %llu (%.2f%%", entry->label, entry->hit_count, entry->elapsed_exclusive, percent);
 
   if (entry->elapsed_inclusive != entry->elapsed_exclusive) {
     f64 percent_with_children = 100.0 * (f64)entry->elapsed_inclusive / total_elapsed;
@@ -76,7 +100,7 @@ static void beginProfile() {
 static void endAndPrintProfile() {
   u64 elapsed = readCpuTimer() - global_profiler_.start;
   f64 ms = elapsed / (f64)global_profiler_.cpu_freq * 1000.0;
-  printf("Total time: %fms (CPU freq %lu)\n", ms, global_profiler_.cpu_freq);
+  printf("Total time: %fms (CPU freq %llu)\n", ms, global_profiler_.cpu_freq);
   for (u32 i = 1; i < ArrayCount(global_profiler_.entries); ++i) {
     ProfileEntry *entry = global_profiler_.entries + i;
     if (entry->elapsed_exclusive) {

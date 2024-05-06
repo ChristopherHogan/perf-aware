@@ -1,3 +1,6 @@
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -45,7 +48,7 @@ bool verifyHaversine(Arena *scratch, f64 *answers, const char *filename, u32 num
   for (u32 i = 0; i < num_points + 1; ++i) {
     f64 answer = atof((const char *)at);
     while (*at++ != '\n');
-    if (abs(answer - answers[i]) > 0.00000001) {
+    if (fabs(answer - answers[i]) > 0.00000001) {
       fprintf(stderr, "%.16f != %.16f\n", answer, answers[i]);
       result = false;
       break;

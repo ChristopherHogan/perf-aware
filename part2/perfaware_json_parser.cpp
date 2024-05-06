@@ -17,7 +17,7 @@ EntireFile readEntireFile(Arena *arena, const char *path) {
         if ((u32)file_size <= arena->capacity) {
           fseek(fstream, 0, SEEK_SET);
           result.data = pushArray<u8>(arena, file_size);
-          int items_read = 0;
+          size_t items_read = 0;
           {
             TimeBandwidth("fread", file_size);
             items_read = fread(result.data, file_size, 1, fstream);
@@ -86,7 +86,7 @@ Token *getLastToken(TokenArray *arr) {
   if (arr && arr->head) {
     result = &arr->head[arr->count - 1];
   } else {
-    fprintf(stderr, "ERROR: arr is NULL: %s\n", __PRETTY_FUNCTION__);
+    fprintf(stderr, "ERROR: arr is NULL: %s\n", __FUNCTION__);
   }
 
   return result;
@@ -181,7 +181,7 @@ TokenArray tokenize(Arena *arena, EntireFile *entire_file) {
 
 PointArray parseTokens(Arena *arena, TokenArray *tokens) {
   TimeFunction;
-  u32 num_points = tokens->num_points / 4.0;
+  u32 num_points = tokens->num_points / 4;
   Point *data = pushArray<Point>(arena, num_points);
   PointArray result = {};
   result.data = data;
