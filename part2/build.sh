@@ -14,6 +14,8 @@ time {
     # g++ ${debug_flags} ${common_flags} -o genPoints_db point_generator.cpp &
     g++ ${release_flags} ${common_flags} -o haversine haversine_processor.cpp &
     g++ ${debug_flags} ${common_flags} -o haversine_db haversine_processor.cpp &
+    g++ ${debug_flags} ${common_flags} -o read_test read_repetition_tester.cpp &
+    g++ ${release_flags} ${common_flags} -o read_test read_repetition_tester.cpp &
     wait
 }
 echo ""

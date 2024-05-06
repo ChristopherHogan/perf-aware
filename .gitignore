@@ -11,6 +11,8 @@ GTAGS
 *sim86db
 genPoints*
 haversine*
+read_test
+
 !haversine*.h
 !haversine*.cpp
 
