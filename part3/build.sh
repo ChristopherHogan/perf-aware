@@ -39,7 +39,7 @@ elif [ "$machine" = "MinGw" ]; then
     debug_flags="${profile_flag}"
     common_flags="-Zi -W4 -EHsc -nologo -std:c++20"
 
-    programs=("point_generator" "haversine_processor" "read_repetition_tester")
+    programs=("read_repetition_tester")
 
     echo -n "Compilation Time:"
     time {

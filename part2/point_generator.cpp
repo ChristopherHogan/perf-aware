@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -11,6 +13,8 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef int32_t s32;
 typedef double f64;
+
+#define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #include "perfaware_timer.h"
 #include "perfaware_haversine.h"
@@ -30,7 +34,7 @@ Point *generatePoints(Arena *arena, Arguments *args) {
 
   std::uniform_real_distribution<f64> unifX(-180, 180);
   std::uniform_real_distribution<f64> unifY(-90, 90);
-  std::default_random_engine re(args->seed);
+  std::default_random_engine re((unsigned int)args->seed);
 
   u64 count = args->num_points;
   u64 offset = 0;
@@ -91,7 +95,7 @@ int main(int argc, char **argv) {
 
   if (argc == kNumArgs) {
     BeginProfile;
-    Arena arena = initArenaAndAllocate(KILOBYTES(64));
+    Arena arena = initArenaAndAllocate(MEGABYTES(512));
 
     Arguments args = {};
     args.seed = atoll(argv[1]);
